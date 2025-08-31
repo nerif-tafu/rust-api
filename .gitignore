@@ -1,0 +1,8 @@
+/steam-cmd/
+/asset-ripper/
+/export-data/
+/processed-data/
+/game-data/
+/node_modules/
+.env
+.DS_Store
