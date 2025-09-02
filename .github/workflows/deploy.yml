@@ -47,8 +47,9 @@ jobs:
         
     - name: Install system dependencies
       run: |
+        sudo dpkg --add-architecture i386
         sudo apt-get update -qq
-        sudo apt-get install -y -qq lib32gcc-s1 curl
+        sudo apt-get install -y -qq lib32gcc-s1 curl libcurl4-openssl-dev:i386
         
     - name: Install dependencies
       run: npm ci --production=false
