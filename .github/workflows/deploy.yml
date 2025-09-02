@@ -26,6 +26,14 @@ jobs:
     environment: ${{ github.event.inputs.environment || 'production' }}
     
     steps:
+    - name: Kill existing SteamCMD processes
+      run: |
+        echo "🛑 Stopping any existing SteamCMD processes..."
+        sudo pkill -f steamcmd || true
+        sudo pkill -f steamcmd.sh || true
+        sleep 2
+        echo "✅ SteamCMD processes stopped"
+        
     - name: Checkout code
       uses: actions/checkout@v4
       with:
@@ -59,17 +67,37 @@ jobs:
         
     - name: Copy application files
       run: |
-        # Clean up any existing deployment directory
-        sudo rm -rf ${{ env.DEPLOY_DIR }}
+        # Create deployment directory if it doesn't exist
         sudo mkdir -p ${{ env.DEPLOY_DIR }}
         sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
         
-        # Copy only necessary files (exclude .git, node_modules, etc.)
+        # Preserve existing game-data directory if it exists
+        if [ -d "${{ env.DEPLOY_DIR }}/game-data" ]; then
+          echo "📁 Preserving existing game-data directory..."
+          # Temporarily move it out of the way
+          sudo mv ${{ env.DEPLOY_DIR }}/game-data ${{ env.DEPLOY_DIR }}/game-data-backup
+        fi
+        
+        # Clean up old application files (but preserve game-data)
+        sudo rm -rf ${{ env.DEPLOY_DIR }}/node_modules
+        sudo rm -f ${{ env.DEPLOY_DIR }}/*.js
+        sudo rm -f ${{ env.DEPLOY_DIR }}/package*.json
+        sudo rm -f ${{ env.DEPLOY_DIR }}/.env
+        
+        # Copy only necessary application files
         cp -r package*.json ${{ env.DEPLOY_DIR }}/
         cp -r *.js ${{ env.DEPLOY_DIR }}/
         cp -r .env ${{ env.DEPLOY_DIR }}/
         
-        # Create necessary directories
+        # Restore game-data directory
+        if [ -d "${{ env.DEPLOY_DIR }}/game-data-backup" ]; then
+          echo "📁 Restoring game-data directory..."
+          sudo rm -rf ${{ env.DEPLOY_DIR }}/game-data
+          sudo mv ${{ env.DEPLOY_DIR }}/game-data-backup ${{ env.DEPLOY_DIR }}/game-data
+          sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}/game-data
+        fi
+        
+        # Ensure necessary directories exist
         mkdir -p ${{ env.DEPLOY_DIR }}/logs
         mkdir -p ${{ env.DEPLOY_DIR }}/cache
         
