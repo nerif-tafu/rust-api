@@ -130,8 +130,15 @@ class AssetRipperManager {
         console.log(`Extracting AssetRipper to: ${extractPath}`);
         
         try {
-            // Use unzip command on Unix-like systems
+            // Check if unzip is available
             if (process.platform !== 'win32') {
+                try {
+                    execSync('which unzip', { stdio: 'pipe' });
+                } catch (error) {
+                    throw new Error('unzip command not found. Please install unzip package.');
+                }
+                
+                console.log('Using unzip command for extraction...');
                 execSync(`unzip -o "${zipPath}" -d "${extractPath}"`, { stdio: 'inherit' });
             } else {
                 // On Windows, we'll need to use a different approach
@@ -139,8 +146,20 @@ class AssetRipperManager {
                 execSync(`powershell -command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractPath}' -Force"`, { stdio: 'inherit' });
             }
             
+            // Verify extraction succeeded by checking for expected files
+            const expectedFiles = ['AssetRipper.GUI.Free', 'AssetRipper.GUI.Free.exe'];
+            const hasExecutable = expectedFiles.some(file => fs.existsSync(path.join(extractPath, file)));
+            
+            if (!hasExecutable) {
+                throw new Error('Extraction completed but expected files not found. Extraction may have failed.');
+            }
+            
             console.log('Extraction completed successfully!');
+            console.log(`Extracted files: ${fs.readdirSync(extractPath).join(', ')}`);
+            
         } catch (error) {
+            console.error(`❌ Extraction failed: ${error.message}`);
+            console.error('This will prevent AssetRipper from working properly.');
             throw new Error(`Failed to extract zip file: ${error.message}`);
         }
     }
@@ -206,6 +225,12 @@ class AssetRipperManager {
             throw new Error(`AssetRipper executable not found at expected path: ${executablePath}`);
         }
         
+        // Check if the file is actually a file (not a directory)
+        const stats = fs.statSync(executablePath);
+        if (!stats.isFile()) {
+            throw new Error(`AssetRipper executable path exists but is not a file: ${executablePath}`);
+        }
+        
         // Make executable on Unix-like systems
         if (os !== 'win32') {
             try {
@@ -217,6 +242,7 @@ class AssetRipperManager {
         }
         
         console.log(`AssetRipper setup completed: ${executablePath}`);
+        console.log(`File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
         return executablePath;
     }
 

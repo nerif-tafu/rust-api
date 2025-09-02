@@ -265,22 +265,15 @@ class SteamCMDManager {
                     }
                 }
                 
-                // Track other SteamCMD phases
+                // Track other SteamCMD phases (only log, don't update status to preserve progress)
                 if (output.includes('Checking for available updates')) {
-                    if (global.serverStatus && global.serverStatus.updateStatus) {
-                        global.serverStatus.updateStatus(3, 'Checking for Rust updates...', {
-                            stage: 'checking_updates',
-                            progress: 0
-                        });
-                    }
+                    console.log('🔄 Checking for Rust updates...');
                 } else if (output.includes('Verifying installation')) {
-                    if (global.serverStatus && global.serverStatus.updateStatus) {
-                        global.serverStatus.updateStatus(3, 'Verifying Rust installation...', {
-                            stage: 'verifying',
-                            progress: 0
-                        });
-                    }
+                    console.log('🔄 Verifying Rust installation...');
                 } else if (output.includes('Update state (0x') && output.includes('downloading')) {
+                    console.log('🔄 Download started - preparing files...');
+                    
+                    // Update status to show download has started with 0% progress
                     if (global.serverStatus && global.serverStatus.updateStatus) {
                         global.serverStatus.updateStatus(3, 'Download started - preparing files...', {
                             stage: 'download_started',
@@ -417,6 +410,29 @@ quit`;
         } catch (error) {
             console.log(`⚠️  Error reading rust_items.json: ${error.message} - need to download and extract Rust data`);
             return true; // Update needed
+        }
+        
+        // Check if we recently failed an extraction to prevent infinite loops
+        const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+        if (fs.existsSync(extractionFailurePath)) {
+            const failureTime = fs.statSync(extractionFailurePath).mtime.getTime();
+            const timeSinceFailure = Date.now() - failureTime;
+            const maxRetryTime = 30 * 60 * 1000; // 30 minutes
+            
+            if (timeSinceFailure < maxRetryTime) {
+                console.log(`⚠️  Recent extraction failure detected. Waiting before retry to prevent infinite loop.`);
+                console.log(`⏰ Time since failure: ${Math.floor(timeSinceFailure / 1000 / 60)} minutes`);
+                console.log(`⏳ Will retry in ${Math.floor((maxRetryTime - timeSinceFailure) / 1000 / 60)} minutes`);
+                return false; // Don't update yet
+            } else {
+                // Remove the failure marker and try again
+                try {
+                    fs.unlinkSync(extractionFailurePath);
+                    console.log('🔄 Extraction failure marker expired, will retry extraction.');
+                } catch (error) {
+                    console.log('Could not remove extraction failure marker:', error.message);
+                }
+            }
         }
         
         const steamCmdPath = this.getSteamCmdPath();
@@ -756,9 +772,42 @@ quit`;
                 
                 // Run AssetRipper extraction
                 console.log('🔄 Running AssetRipper extraction with updated files...');
-                const AssetRipperManager = require('./asset-ripper-manager');
-                const manager = new AssetRipperManager();
-                await manager.extractRustItems();
+                try {
+                    const AssetRipperManager = require('./asset-ripper-manager');
+                    const manager = new AssetRipperManager();
+                    await manager.extractRustItems();
+                    
+                    // Verify extraction was successful
+                    const rustItemsPath = path.join(process.cwd(), 'processed-data', 'rust_items.json');
+                    if (fs.existsSync(rustItemsPath)) {
+                        const itemsData = JSON.parse(fs.readFileSync(rustItemsPath, 'utf8'));
+                        if (itemsData && Array.isArray(itemsData) && itemsData.length > 0) {
+                            console.log(`✅ AssetRipper extraction completed successfully! Extracted ${itemsData.length} items.`);
+                            
+                            // Remove any failure marker if it exists
+                            const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+                            if (fs.existsSync(extractionFailurePath)) {
+                                try {
+                                    fs.unlinkSync(extractionFailurePath);
+                                    console.log('✅ Removed extraction failure marker.');
+                                } catch (error) {
+                                    console.log('Could not remove extraction failure marker:', error.message);
+                                }
+                            }
+                        } else {
+                            console.log('⚠️  AssetRipper extraction completed but no items were found.');
+                            this.markExtractionFailure();
+                        }
+                    } else {
+                        console.log('❌ AssetRipper extraction failed - rust_items.json was not created.');
+                        this.markExtractionFailure();
+                    }
+                } catch (extractionError) {
+                    console.error('❌ AssetRipper extraction failed:', extractionError.message);
+                    console.error('This will prevent the system from serving item data.');
+                    console.error('Please check the AssetRipper logs for more details.');
+                    this.markExtractionFailure();
+                }
                 
             } else {
                 console.log('✅ No update needed at this time');
@@ -794,6 +843,16 @@ quit`;
         } catch (error) {
             console.error('Operation failed:', error.message);
             process.exit(1);
+        }
+    }
+
+    markExtractionFailure() {
+        const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+        try {
+            fs.writeFileSync(extractionFailurePath, Date.now().toString());
+            console.log('✅ Marked extraction failure. System will wait before retrying.');
+        } catch (error) {
+            console.warn('Could not mark extraction failure:', error.message);
         }
     }
 }

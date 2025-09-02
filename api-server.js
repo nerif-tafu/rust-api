@@ -24,7 +24,13 @@ function updateStatus(status, message, details = {}) {
     serverStatus.message = message;
     serverStatus.details = details;
     serverStatus.lastUpdate = new Date();
-    console.log(`🔄 Status ${status}: ${message}`);
+    
+    // Log progress updates specifically
+    if (details.progress !== undefined) {
+        console.log(`🔄 Status ${status}: ${message} - Progress: ${details.progress}%`);
+    } else {
+        console.log(`🔄 Status ${status}: ${message}`);
+    }
 }
 
 // Make updateStatus available globally for index.js
@@ -93,6 +99,43 @@ app.use((req, res, next) => {
     next();
 });
 
+// Debug endpoint to check current server status details
+app.get('/debug/status', (req, res) => {
+    // Read log files for debugging
+    let appLogs = [];
+    let errorLogs = [];
+    
+    try {
+        const appLogPath = path.join(__dirname, 'logs', 'app.log');
+        if (fs.existsSync(appLogPath)) {
+            const appLogContent = fs.readFileSync(appLogPath, 'utf8');
+            appLogs = appLogContent.split('\n').slice(-50).filter(line => line.trim() !== '');
+        }
+    } catch (error) {
+        appLogs = [`Error reading app.log: ${error.message}`];
+    }
+    
+    try {
+        const errorLogPath = path.join(__dirname, 'logs', 'error.log');
+        if (fs.existsSync(errorLogPath)) {
+            const errorLogContent = fs.readFileSync(errorLogPath, 'utf8');
+            errorLogs = errorLogContent.split('\n').slice(-50).filter(line => line.trim() !== '');
+        }
+    } catch (error) {
+        errorLogs = [`Error reading error.log: ${error.message}`];
+    }
+    
+    res.json({
+        currentStatus: serverStatus,
+        globalServerStatus: global.serverStatus ? 'Available' : 'Not available',
+        timestamp: new Date().toISOString(),
+        logs: {
+            app: appLogs,
+            error: errorLogs
+        }
+    });
+});
+
 // Health check endpoint for deployment verification
 app.get('/health', (req, res) => {
     const uptime = Date.now() - serverStatus.startTime.getTime();
@@ -113,7 +156,8 @@ app.get('/ready', (req, res) => {
         res.status(200).json({
             ready: true,
             status: serverStatus.status,
-            message: serverStatus.message
+            message: serverStatus.message,
+            details: serverStatus.details
         });
     } else {
         res.status(503).json({
