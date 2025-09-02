@@ -411,6 +411,14 @@ class AssetRipperManager {
     async extractAllItems() {
         console.log('Extracting all items...');
         
+        // Update status to indicate AssetRipper extraction
+        if (global.serverStatus && global.serverStatus.updateStatus) {
+            global.serverStatus.updateStatus(4, 'AssetRipper extraction in progress - loading bundle and extracting items', {
+                stage: 'extraction',
+                substage: 'starting'
+            });
+        }
+        
         // First export the project
         const exportPath = await this.exportProject();
         
@@ -457,6 +465,16 @@ class AssetRipperManager {
         }
         
         console.log(`Extracted ${items.length} items and ${blueprints.length} blueprints`);
+        
+        // Update status to indicate extraction completed
+        if (global.serverStatus && global.serverStatus.updateStatus) {
+            global.serverStatus.updateStatus(5, 'AssetRipper extraction completed - server ready to serve requests', {
+                stage: 'extraction_complete',
+                itemsCount: items.length,
+                blueprintsCount: blueprints.length
+            });
+        }
+        
         return { items, blueprints };
     }
 

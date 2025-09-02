@@ -121,24 +121,34 @@ jobs:
         
     - name: Verify deployment
       run: |
-        echo "🔍 Verifying API endpoint..."
+        echo "🔍 Verifying API readiness..."
         # Try multiple times with increasing delays
-        for i in {1..5}; do
-          echo "Attempt $i/5: Checking http://localhost:${{ secrets.PORT || '3100' }}/"
-          if curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ > /dev/null; then
-            echo "✅ API endpoint is responding successfully!"
+        for i in {1..10}; do
+          echo "Attempt $i/10: Checking readiness at http://localhost:${{ secrets.PORT || '3100' }}/ready"
+          
+          # Check the readiness endpoint
+          if curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ready | grep -q '"ready":true'; then
+            echo "✅ API is ready and responding to requests!"
             break
           else
-            echo "⏳ API not ready yet, waiting..."
-            sleep 30
+            # Get current status for debugging
+            echo "⏳ API not ready yet, current status:"
+            curl -s http://localhost:${{ secrets.PORT || '3100' }}/ready | jq '.' || echo "Status endpoint not available yet"
+            
+            if [ $i -lt 10 ]; then
+              echo "Waiting 60 seconds before next attempt..."
+              sleep 60
+            fi
           fi
         done
         
-        # Final check
-        if ! curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ > /dev/null; then
-          echo "❌ API endpoint verification failed after all attempts"
+        # Final readiness check
+        if ! curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ready | grep -q '"ready":true'; then
+          echo "❌ API readiness verification failed after all attempts"
           echo "📊 Service logs:"
           sudo journalctl -u ${{ env.SERVICE_NAME }} --no-pager -n 50
+          echo "📊 Current API status:"
+          curl -s http://localhost:${{ secrets.PORT || '3100' }}/ready || echo "Status endpoint not available"
           exit 1
         fi
         

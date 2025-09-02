@@ -205,6 +205,14 @@ class SteamCMDManager {
     async downloadRustGame() {
         console.log('Starting Rust game download...');
         
+        // Update status to indicate game downloading
+        if (global.serverStatus && global.serverStatus.updateStatus) {
+            global.serverStatus.updateStatus(3, 'Downloading Rust game files - this may take a while', {
+                stage: 'download',
+                progress: 0
+            });
+        }
+        
         if (!this.steamUsername || !this.steamPassword) {
             throw new Error('Steam credentials not found in .env file. Please set STEAM_USERNAME and STEAM_PASSWORD.');
         }
@@ -269,6 +277,15 @@ class SteamCMDManager {
                 
                 if (hasRustFiles) {
                     console.log('✅ Rust files found despite SteamCMD exit code - download was successful');
+                    
+                    // Update status to indicate download completed
+                    if (global.serverStatus && global.serverStatus.updateStatus) {
+                        global.serverStatus.updateStatus(4, 'Rust download completed - setting up AssetRipper', {
+                            stage: 'download_complete',
+                            rustFilesFound: true
+                        });
+                    }
+                    
                     // Get the current build ID and save it after successful download
                     this.getCurrentBuildId().then(buildId => {
                         if (buildId) {
@@ -280,6 +297,15 @@ class SteamCMDManager {
                     resolve();
                 } else if (code === 0) {
                     // Exit code 0 is always success
+                    
+                    // Update status to indicate download completed
+                    if (global.serverStatus && global.serverStatus.updateStatus) {
+                        global.serverStatus.updateStatus(4, 'Rust download completed - setting up AssetRipper', {
+                            stage: 'download_complete',
+                            exitCode: code
+                        });
+                    }
+                    
                     this.getCurrentBuildId().then(buildId => {
                         if (buildId) {
                             this.saveGameVersion(buildId);

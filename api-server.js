@@ -10,6 +10,30 @@ const archiver = require('archiver');
 const app = express();
 const PORT = process.env.PORT || 3100;
 
+// Server readiness status
+let serverStatus = {
+    status: 0, // 0: Not started, 1: Basic setup, 2: Steam setup, 3: Game downloading, 4: AssetRipper setup, 5: Ready
+    message: 'Server starting up...',
+    details: {},
+    startTime: new Date(),
+    lastUpdate: new Date()
+};
+
+function updateStatus(status, message, details = {}) {
+    serverStatus.status = status;
+    serverStatus.message = message;
+    serverStatus.details = details;
+    serverStatus.lastUpdate = new Date();
+    console.log(`🔄 Status ${status}: ${message}`);
+}
+
+// Make updateStatus available globally for index.js
+global.serverStatus = global.serverStatus || {};
+global.serverStatus.updateStatus = updateStatus;
+
+// Initialize with basic setup
+updateStatus(1, 'Basic setup complete - Express server initialized');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -67,6 +91,38 @@ app.use((req, res, next) => {
     res.setHeader('X-XSS-Protection', '1; mode=block');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
+});
+
+// Health check endpoint for deployment verification
+app.get('/health', (req, res) => {
+    const uptime = Date.now() - serverStatus.startTime.getTime();
+    res.json({
+        status: serverStatus.status,
+        message: serverStatus.message,
+        details: serverStatus.details,
+        uptime: Math.floor(uptime / 1000), // seconds
+        startTime: serverStatus.startTime.toISOString(),
+        lastUpdate: serverStatus.lastUpdate.toISOString(),
+        ready: serverStatus.status >= 5
+    });
+});
+
+// Readiness check endpoint (for deployment workflow)
+app.get('/ready', (req, res) => {
+    if (serverStatus.status >= 5) {
+        res.status(200).json({
+            ready: true,
+            status: serverStatus.status,
+            message: serverStatus.message
+        });
+    } else {
+        res.status(503).json({
+            ready: false,
+            status: serverStatus.status,
+            message: serverStatus.message,
+            details: serverStatus.details
+        });
+    }
 });
 
 // Swagger configuration
@@ -338,26 +394,113 @@ app.get('/', (req, res) => {
     res.json({
         message: 'Rust Items API',
         version: '1.0.0',
-        description: 'API for Rust game items, crafting recipes, and item images',
-        rateLimits: {
-            general: '10,000 requests per 15 minutes',
-            strict: '3,000 requests per 15 minutes (items)'
+        status: serverStatus.status >= 5 ? 'ready' : 'starting up',
+        readiness: {
+            status: serverStatus.status,
+            message: serverStatus.message,
+            ready: serverStatus.status >= 5
         },
         endpoints: [
+            'GET /health - Get detailed server health status',
+            'GET /ready - Check if server is ready to serve requests',
             'GET /api/items - Get all items with crafting information',
             'GET /api/items/:shortname - Get specific item details',
             'GET /api/items/:shortname/image - Get item image',
             'GET /api/categories - Get all available item categories',
             'GET /api/rate-limit-status - Get current rate limit status',
             'GET /api/images/download-all - Download all item images as ZIP (cached)',
-            'GET /api/images/cache-status - Get ZIP cache status',
-            'POST /api/images/rebuild-cache - Force rebuild ZIP cache'
-        ]
+            'GET /api/images/cache-status - Get ZIP cache status'
+        ],
+        rateLimits: {
+            general: '10,000 requests per 15 minutes',
+            strict: '3,000 requests per 15 minutes (items)'
+        }
     });
 });
 
 /**
  * @swagger
+ * /health:
+ *   get:
+ *     summary: Get server health status
+ *     description: Get detailed information about the server's health and readiness status
+ *     responses:
+ *       200:
+ *         description: Server health information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: integer
+ *                   description: Server readiness status (0-5)
+ *                   example: 5
+ *                 message:
+ *                   type: string
+ *                   description: Human-readable status message
+ *                   example: "Server ready - all services running and API available"
+ *                 details:
+ *                   type: object
+ *                   description: Additional status details
+ *                 uptime:
+ *                   type: integer
+ *                   description: Server uptime in seconds
+ *                   example: 3600
+ *                 startTime:
+ *                   type: string
+ *                   format: date-time
+ *                   description: When the server started
+ *                 lastUpdate:
+ *                   type: string
+ *                   format: date-time
+ *                   description: When the status was last updated
+ *                 ready:
+ *                   type: boolean
+ *                   description: Whether the server is ready to serve requests
+ *                   example: true
+ *
+ * /ready:
+ *   get:
+ *     summary: Check server readiness
+ *     description: Simple endpoint to check if the server is ready to serve requests
+ *     responses:
+ *       200:
+ *         description: Server is ready
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ready:
+ *                   type: boolean
+ *                   example: true
+ *                 status:
+ *                   type: integer
+ *                   example: 5
+ *                 message:
+ *                   type: string
+ *                   example: "Server ready - all services running and API available"
+ *       503:
+ *         description: Server is not ready
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ready:
+ *                   type: boolean
+ *                   example: false
+ *                 status:
+ *                   type: integer
+ *                   example: 3
+ *                 message:
+ *                   type: string
+ *                   example: "Downloading Rust game files - this may take a while"
+ *                 details:
+ *                   type: object
+ *                   description: Additional status details
+ *
  * /api/items:
  *   get:
  *     summary: Get all items
@@ -807,46 +950,7 @@ app.get('/api/images/cache-status', (req, res) => {
     }
 });
 
-/**
- * @swagger
- * /api/images/rebuild-cache:
- *   post:
- *     summary: Force rebuild ZIP cache
- *     description: Manually trigger a rebuild of the ZIP cache
- *     responses:
- *       200:
- *         description: Cache rebuild initiated
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- */
-app.post('/api/images/rebuild-cache', async (req, res) => {
-    try {
-        console.log('🔄 Manual cache rebuild requested...');
-        
-        // Force cache invalidation
-        cachedZipPath = null;
-        cachedZipStats = null;
-        
-        // Build new ZIP
-        cachedZipPromise = buildZipArchive();
-        cachedZipPath = await cachedZipPromise;
-        cachedZipStats = getImagesDirectoryStats();
-        cachedZipPromise = null;
-        
-        console.log('✅ Manual cache rebuild completed');
-        
-        res.json({ 
-            message: 'Cache rebuilt successfully',
-            newCachePath: cachedZipPath,
-            newCacheStats: cachedZipStats
-        });
-    } catch (error) {
-        console.error('❌ Error in manual cache rebuild:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+
 
 // Serve Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
