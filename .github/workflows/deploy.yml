@@ -88,6 +88,7 @@ jobs:
         cp -r package*.json ${{ env.DEPLOY_DIR }}/
         cp -r *.js ${{ env.DEPLOY_DIR }}/
         cp -r .env ${{ env.DEPLOY_DIR }}/
+        cp -r node_modules ${{ env.DEPLOY_DIR }}/
         
         # Restore game-data directory
         if [ -d "${{ env.DEPLOY_DIR }}/game-data-backup" ]; then
@@ -103,6 +104,21 @@ jobs:
         
         # Set proper permissions
         chmod +x ${{ env.DEPLOY_DIR }}/*.js
+        
+        # Verify dependencies are available
+        echo "🔍 Verifying dependencies..."
+        if [ ! -d "${{ env.DEPLOY_DIR }}/node_modules" ]; then
+          echo "❌ node_modules directory not found!"
+          exit 1
+        fi
+
+        echo "✅ Dependencies verified successfully"
+        
+        # Install dependencies in deployment directory as backup
+        echo "📦 Installing dependencies in deployment directory..."
+        cd ${{ env.DEPLOY_DIR }}
+        npm ci --production=false
+        cd -
         
     - name: Create systemd service file
       run: |
