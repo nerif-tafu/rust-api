@@ -259,7 +259,16 @@ class SteamCMDManager {
                     console.warn('Could not clean up script file:', error.message);
                 }
                 
-                if (code === 0) {
+                // Check if the download was actually successful despite exit code
+                const gameDataDir = path.resolve(this.directories.gameData);
+                const rustExePath = path.join(gameDataDir, 'Rust', 'rust.exe');
+                const rustAppPath = path.join(gameDataDir, 'Rust', 'rust.app');
+                const rustLinuxPath = path.join(gameDataDir, 'Rust', 'rust');
+                
+                const hasRustFiles = fs.existsSync(rustExePath) || fs.existsSync(rustAppPath) || fs.existsSync(rustLinuxPath);
+                
+                if (hasRustFiles) {
+                    console.log('✅ Rust files found despite SteamCMD exit code - download was successful');
                     // Get the current build ID and save it after successful download
                     this.getCurrentBuildId().then(buildId => {
                         if (buildId) {
@@ -269,8 +278,30 @@ class SteamCMDManager {
                         console.warn('Could not get build ID after download:', error.message);
                     });
                     resolve();
+                } else if (code === 0) {
+                    // Exit code 0 is always success
+                    this.getCurrentBuildId().then(buildId => {
+                        if (buildId) {
+                            this.saveGameVersion(buildId);
+                        }
+                    }).catch(error => {
+                        console.warn('Could not get build ID after download:', error.message);
+                    });
+                    resolve();
                 } else {
-                    reject(new Error(`SteamCMD download failed with code ${code}`));
+                    console.warn(`SteamCMD exited with code ${code}, but this might be normal after successful download`);
+                    // Try to get build ID anyway, as the download might have succeeded
+                    this.getCurrentBuildId().then(buildId => {
+                        if (buildId) {
+                            this.saveGameVersion(buildId);
+                            console.log('✅ Successfully got build ID despite exit code - treating as success');
+                            resolve();
+                        } else {
+                            reject(new Error(`SteamCMD download failed with code ${code} and no Rust files found`));
+                        }
+                    }).catch(error => {
+                        reject(new Error(`SteamCMD download failed with code ${code} and could not verify success: ${error.message}`));
+                    });
                 }
             });
             

@@ -1,0 +1,114 @@
+name: Deploy Rust API
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  NODE_VERSION: '20'
+  SERVICE_NAME: 'rust-api'
+  DEPLOY_DIR: '/opt/rust-api'
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci --production=false
+      
+    - name: Create environment file
+      run: |
+        cat > .env << EOF
+        STEAM_USERNAME=${{ secrets.STEAM_USERNAME }}
+        STEAM_PASSWORD=${{ secrets.STEAM_PASSWORD }}
+        STEAM_APP_ID=${{ secrets.STEAM_APP_ID || '252490' }}
+        PORT=${{ secrets.PORT || '3100' }}
+        API_BASE_URL=${{ secrets.API_BASE_URL || 'http://localhost:3100' }}
+        EOF
+        
+    - name: Create deployment directories
+      run: |
+        sudo mkdir -p ${{ env.DEPLOY_DIR }}
+        sudo mkdir -p ${{ env.DEPLOY_DIR }}/logs
+        sudo mkdir -p ${{ env.DEPLOY_DIR }}/cache
+        sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
+        
+    - name: Copy application files
+      run: |
+        cp -r . ${{ env.DEPLOY_DIR }}/
+        cd ${{ env.DEPLOY_DIR }}
+        chmod +x *.js
+        
+    - name: Create systemd service file
+      run: |
+        sudo tee /etc/systemd/system/${{ env.SERVICE_NAME }}.service << EOF
+        [Unit]
+        Description=Rust API Server
+        After=network.target
+        
+        [Service]
+        Type=simple
+        User=$USER
+        WorkingDirectory=${{ env.DEPLOY_DIR }}
+        ExecStart=/usr/bin/node index.js
+        Restart=always
+        RestartSec=10
+        StandardOutput=append:${{ env.DEPLOY_DIR }}/logs/app.log
+        StandardError=append:${{ env.DEPLOY_DIR }}/logs/error.log
+        Environment=NODE_ENV=production
+        Environment=PORT=${{ secrets.PORT || '3100' }}
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        
+    - name: Reload systemd and enable service
+      run: |
+        sudo systemctl daemon-reload
+        sudo systemctl enable ${{ env.SERVICE_NAME }}
+        
+    - name: Stop existing service
+      run: |
+        sudo systemctl stop ${{ env.SERVICE_NAME }} 2>/dev/null || true
+        
+    - name: Start service
+      run: |
+        sudo systemctl start ${{ env.SERVICE_NAME }}
+        
+    - name: Verify deployment
+      run: |
+        sleep 10
+        curl -f http://localhost:${{ secrets.PORT || '3100' }}/ || exit 1
+        
+    - name: Deployment status
+      run: |
+        echo "🚀 Rust API deployed successfully!"
+        echo "📍 Port: ${{ secrets.PORT || '3100' }}"
+        echo "🌐 API Base URL: ${{ secrets.API_BASE_URL || 'http://localhost:3100' }}"
+        echo "📚 Swagger Docs: http://localhost:${{ secrets.PORT || '3100' }}/api-docs"
+        echo "📊 Service Status:"
+        sudo systemctl status ${{ env.SERVICE_NAME }} --no-pager -l

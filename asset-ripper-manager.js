@@ -39,6 +39,24 @@ class AssetRipperManager {
         this.subDirectories = {
             logs: 'asset-ripper/logs'
         };
+        
+        // Rust item category mapping
+        this.categoryMap = {
+            0: 'Weapon',
+            1: 'Construction',
+            2: 'Items',
+            3: 'Resources',
+            4: 'Attire',
+            5: 'Tool',
+            6: 'Medical',
+            7: 'Food',
+            8: 'Ammunition',
+            9: 'Traps',
+            10: 'Misc',
+            13: 'Deployable',
+            16: 'Vehicle',
+            17: 'Electrical'
+        };
     }
 
     // ===== SETUP METHODS =====
@@ -499,6 +517,7 @@ class AssetRipperManager {
                     displayName: displayName,
                     itemid: itemid,
                     category: category,
+                    categoryName: category !== null ? this.categoryMap[category] || 'Unknown' : null,
                     stackable: stackable,
                     volume: volume,
                     ingredients: [],
