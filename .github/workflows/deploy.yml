@@ -55,18 +55,26 @@ jobs:
         API_BASE_URL=${{ secrets.API_BASE_URL || 'http://localhost:3100' }}
         EOF
         
-    - name: Create deployment directories
-      run: |
-        sudo mkdir -p ${{ env.DEPLOY_DIR }}
-        sudo mkdir -p ${{ env.DEPLOY_DIR }}/logs
-        sudo mkdir -p ${{ env.DEPLOY_DIR }}/cache
-        sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
+
         
     - name: Copy application files
       run: |
-        cp -r . ${{ env.DEPLOY_DIR }}/
-        cd ${{ env.DEPLOY_DIR }}
-        chmod +x *.js
+        # Clean up any existing deployment directory
+        sudo rm -rf ${{ env.DEPLOY_DIR }}
+        sudo mkdir -p ${{ env.DEPLOY_DIR }}
+        sudo chown -R $USER:$USER ${{ env.DEPLOY_DIR }}
+        
+        # Copy only necessary files (exclude .git, node_modules, etc.)
+        cp -r package*.json ${{ env.DEPLOY_DIR }}/
+        cp -r *.js ${{ env.DEPLOY_DIR }}/
+        cp -r .env ${{ env.DEPLOY_DIR }}/
+        
+        # Create necessary directories
+        mkdir -p ${{ env.DEPLOY_DIR }}/logs
+        mkdir -p ${{ env.DEPLOY_DIR }}/cache
+        
+        # Set proper permissions
+        chmod +x ${{ env.DEPLOY_DIR }}/*.js
         
     - name: Create systemd service file
       run: |
