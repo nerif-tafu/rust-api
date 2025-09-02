@@ -104,10 +104,43 @@ jobs:
       run: |
         sudo systemctl start ${{ env.SERVICE_NAME }}
         
+    - name: Wait for service to be ready
+      run: |
+        echo "⏳ Waiting for service to start and be ready..."
+        # Wait longer for first startup (Rust download can take time)
+        sleep 30
+        
+        # Check if service is running
+        if sudo systemctl is-active --quiet ${{ env.SERVICE_NAME }}; then
+          echo "✅ Service is running"
+        else
+          echo "❌ Service failed to start"
+          sudo systemctl status ${{ env.SERVICE_NAME }} --no-pager -l
+          exit 1
+        fi
+        
     - name: Verify deployment
       run: |
-        sleep 10
-        curl -f http://localhost:${{ secrets.PORT || '3100' }}/ || exit 1
+        echo "🔍 Verifying API endpoint..."
+        # Try multiple times with increasing delays
+        for i in {1..5}; do
+          echo "Attempt $i/5: Checking http://localhost:${{ secrets.PORT || '3100' }}/"
+          if curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ > /dev/null; then
+            echo "✅ API endpoint is responding successfully!"
+            break
+          else
+            echo "⏳ API not ready yet, waiting..."
+            sleep 30
+          fi
+        done
+        
+        # Final check
+        if ! curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ > /dev/null; then
+          echo "❌ API endpoint verification failed after all attempts"
+          echo "📊 Service logs:"
+          sudo journalctl -u ${{ env.SERVICE_NAME }} --no-pager -n 50
+          exit 1
+        fi
         
     - name: Deployment status
       run: |
