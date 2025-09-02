@@ -4,9 +4,7 @@
   "description": "Extract item information from Rust game files using AssetRipper API",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "extract": "node index.js",
-    "download-rust": "node steamcmd-manager.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "axios": "^1.6.0",

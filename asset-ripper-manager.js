@@ -236,14 +236,14 @@ class AssetRipperManager {
 
     checkBundleFile() {
         // Look for bundle file in game-data directory
-        let bundlePath = path.resolve('./game-data/items.preload.bundle');
+        let bundlePath = path.resolve('./game-data/Bundles/shared/items.preload.bundle');
         
         if (!fs.existsSync(bundlePath)) {
             console.error('\n❌ Bundle file not found!');
-            console.error('Expected location: game-data/items.preload.bundle');
-            console.error('\nPlease place your Rust bundle file (items.preload.bundle) in the game-data directory.');
+            console.error('Expected location: game-data/Bundles/shared/items.preload.bundle');
+            console.error('\nPlease place your Rust bundle file (items.preload.bundle) in the game-data/Bundles/shared directory.');
             console.error('You can find this file in your Rust game installation.\n');
-            throw new Error('Bundle file not found. Please place your items.preload.bundle file in the game-data directory.');
+            throw new Error('Bundle file not found. Please place your items.preload.bundle file in the game-data/Bundles/shared directory.');
         }
         
         return bundlePath;
