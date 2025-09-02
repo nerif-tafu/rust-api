@@ -37,6 +37,11 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         
+    - name: Install system dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y lib32gcc-s1 lib32stdc++6 lib32z1 lib32gcc1 curl
+        
     - name: Install dependencies
       run: npm ci --production=false
       
