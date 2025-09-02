@@ -175,8 +175,8 @@ jobs:
       run: |
         echo "🔍 Verifying API readiness..."
         # Try multiple times with increasing delays
-        for i in {1..10}; do
-          echo "Attempt $i/10: Checking readiness at http://localhost:${{ secrets.PORT || '3100' }}/ready"
+        for i in {1..20}; do
+          echo "Attempt $i/20: Checking readiness at http://localhost:${{ secrets.PORT || '3100' }}/ready"
           
           # Check the readiness endpoint
           if curl -f -s http://localhost:${{ secrets.PORT || '3100' }}/ready | grep -q '"ready":true'; then
@@ -187,7 +187,7 @@ jobs:
             echo "⏳ API not ready yet, current status:"
             curl -s http://localhost:${{ secrets.PORT || '3100' }}/ready | jq '.' || echo "Status endpoint not available yet"
             
-            if [ $i -lt 10 ]; then
+            if [ $i -lt 20 ]; then
               echo "Waiting 60 seconds before next attempt..."
               sleep 60
             fi

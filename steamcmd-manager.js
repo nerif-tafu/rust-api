@@ -245,6 +245,50 @@ class SteamCMDManager {
                 const output = data.toString();
                 console.log(output.trim());
                 
+                // Parse SteamCMD progress output
+                const progressMatch = output.match(/Update state \(0x\d+\) downloading, progress: ([\d.]+)% \((\d+) \/ (\d+)\)/);
+                if (progressMatch) {
+                    const progressPercent = parseFloat(progressMatch[1]);
+                    const downloadedBytes = parseInt(progressMatch[2]);
+                    const totalBytes = parseInt(progressMatch[3]);
+                    
+                    // Update status with real progress
+                    if (global.serverStatus && global.serverStatus.updateStatus) {
+                        global.serverStatus.updateStatus(3, `Downloading Rust game files - ${progressPercent.toFixed(1)}% complete`, {
+                            stage: 'download',
+                            progress: progressPercent,
+                            downloadedBytes: downloadedBytes,
+                            totalBytes: totalBytes,
+                            downloadedMB: (downloadedBytes / 1024 / 1024).toFixed(1),
+                            totalMB: (totalBytes / 1024 / 1024).toFixed(1)
+                        });
+                    }
+                }
+                
+                // Track other SteamCMD phases
+                if (output.includes('Checking for available updates')) {
+                    if (global.serverStatus && global.serverStatus.updateStatus) {
+                        global.serverStatus.updateStatus(3, 'Checking for Rust updates...', {
+                            stage: 'checking_updates',
+                            progress: 0
+                        });
+                    }
+                } else if (output.includes('Verifying installation')) {
+                    if (global.serverStatus && global.serverStatus.updateStatus) {
+                        global.serverStatus.updateStatus(3, 'Verifying Rust installation...', {
+                            stage: 'verifying',
+                            progress: 0
+                        });
+                    }
+                } else if (output.includes('Update state (0x') && output.includes('downloading')) {
+                    if (global.serverStatus && global.serverStatus.updateStatus) {
+                        global.serverStatus.updateStatus(3, 'Download started - preparing files...', {
+                            stage: 'download_started',
+                            progress: 0
+                        });
+                    }
+                }
+                
                 // Check for completion
                 if (output.includes('Success! App \'' + this.steamAppId + '\' fully installed.')) {
                     console.log('✅ Rust download completed successfully!');
