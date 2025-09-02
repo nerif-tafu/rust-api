@@ -205,6 +205,26 @@ jobs:
           exit 1
         fi
         
+        # Test API endpoint to ensure data is being served
+        echo "🧪 Testing API endpoint with sample item request..."
+        echo "Testing: http://localhost:${{ secrets.PORT || '3100' }}/api/items/wood"
+        
+        # Test the wood item endpoint
+        if curl -f -s "http://localhost:${{ secrets.PORT || '3100' }}/api/items/wood" | jq '.' > /dev/null; then
+          echo "✅ API endpoint test passed - wood item data retrieved successfully"
+          
+          # Show a sample of the response for verification
+          echo "📋 Sample response data:"
+          curl -s "http://localhost:${{ secrets.PORT || '3100' }}/api/items/wood" | jq '. | {shortname, displayName, category, categoryName, stackable}' || echo "Could not parse response"
+        else
+          echo "❌ API endpoint test failed - could not retrieve wood item data"
+          echo "📊 Response received:"
+          curl -s "http://localhost:${{ secrets.PORT || '3100' }}/api/items/wood" || echo "No response received"
+          echo "📊 Service logs:"
+          sudo journalctl -u ${{ env.SERVICE_NAME }} --no-pager -n 20
+          exit 1
+        fi
+        
     - name: Deployment status
       run: |
         echo "🚀 Rust API deployed successfully!"

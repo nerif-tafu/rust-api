@@ -397,6 +397,28 @@ quit`;
     async checkGameVersion() {
         console.log('Checking if Rust game version has changed...');
         
+        // Check if rust_items.json is empty or missing - if so, we need to download and extract
+        const rustItemsPath = path.join(process.cwd(), 'processed-data', 'rust_items.json');
+        if (!fs.existsSync(rustItemsPath)) {
+            console.log('📝 rust_items.json not found - need to download and extract Rust data');
+            return true; // Update needed
+        }
+        
+        try {
+            const rustItemsContent = fs.readFileSync(rustItemsPath, 'utf8');
+            const rustItems = JSON.parse(rustItemsContent);
+            
+            if (!rustItems || !Array.isArray(rustItems) || rustItems.length === 0) {
+                console.log('📝 rust_items.json is empty - need to download and extract Rust data');
+                return true; // Update needed
+            }
+            
+            console.log(`✅ rust_items.json contains ${rustItems.length} items - checking version...`);
+        } catch (error) {
+            console.log(`⚠️  Error reading rust_items.json: ${error.message} - need to download and extract Rust data`);
+            return true; // Update needed
+        }
+        
         const steamCmdPath = this.getSteamCmdPath();
         if (!fs.existsSync(steamCmdPath)) {
             console.log('SteamCMD not found. Cannot check version without SteamCMD.');
