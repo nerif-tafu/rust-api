@@ -1,6 +1,7 @@
 # Rust Item Extractor
 
 [![Deploy Rust API](https://github.com/nerif-tafu/rust-api/actions/workflows/deploy.yml/badge.svg)](https://github.com/nerif-tafu/rust-api/actions/workflows/deploy.yml)
+
 Automatically extracts item data from Rust game files and keeps it updated.
 
 ## Quick Start
