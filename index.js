@@ -24,6 +24,7 @@ async function main() {
     
     // Ensure Rust game files are available (includes credential validation)
     const steamManager = new SteamCMDManager();
+    global.steamManager = steamManager; // Make available globally for force update endpoint
     await steamManager.ensureRustFilesAvailable();
     
     // Update status to indicate AssetRipper setup

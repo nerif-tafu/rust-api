@@ -16,7 +16,56 @@ let serverStatus = {
     message: 'Server starting up...',
     details: {},
     startTime: new Date(),
-    lastUpdate: new Date()
+    lastUpdate: new Date(),
+    lastUpdateCheck: new Date()
+};
+
+// In-memory log storage
+let serverLogs = [];
+const MAX_LOG_LINES = 1000;
+
+// Function to add log entry
+function addLogEntry(message, level = 'info') {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+        timestamp: timestamp,
+        level: level,
+        message: message
+    };
+    
+    serverLogs.push(logEntry);
+    
+    // Keep only the last MAX_LOG_LINES entries
+    if (serverLogs.length > MAX_LOG_LINES) {
+        serverLogs = serverLogs.slice(-MAX_LOG_LINES);
+    }
+    
+    // Also log to console using the original console.log to avoid recursion
+    originalConsoleLog(message);
+}
+
+// Override console.log to capture logs
+const originalConsoleLog = console.log;
+console.log = function(...args) {
+    const message = args.join(' ');
+    addLogEntry(message, 'info');
+    originalConsoleLog.apply(console, args);
+};
+
+// Override console.error to capture errors
+const originalConsoleError = console.error;
+console.error = function(...args) {
+    const message = args.join(' ');
+    addLogEntry(message, 'error');
+    originalConsoleError.apply(console, args);
+};
+
+// Override console.warn to capture warnings
+const originalConsoleWarn = console.warn;
+console.warn = function(...args) {
+    const message = args.join(' ');
+    addLogEntry(message, 'warn');
+    originalConsoleWarn.apply(console, args);
 };
 
 function updateStatus(status, message, details = {}) {
@@ -24,6 +73,11 @@ function updateStatus(status, message, details = {}) {
     serverStatus.message = message;
     serverStatus.details = details;
     serverStatus.lastUpdate = new Date();
+    
+    // Update last update check time if this is related to update checking
+    if (message.includes('checking') || message.includes('update') || message.includes('monitoring')) {
+        serverStatus.lastUpdateCheck = new Date();
+    }
     
     // Log progress updates specifically
     if (details.progress !== undefined) {
@@ -36,6 +90,10 @@ function updateStatus(status, message, details = {}) {
 // Make updateStatus available globally for index.js
 global.serverStatus = global.serverStatus || {};
 global.serverStatus.updateStatus = updateStatus;
+
+// Add initial log entries
+addLogEntry('🚀 Starting Rust API server...');
+addLogEntry('🌐 Starting Rust Items API server...');
 
 // Initialize with basic setup
 updateStatus(1, 'Basic setup complete - Express server initialized');
@@ -175,7 +233,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.0.0',
+            version: '1.1.0',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
@@ -184,8 +242,12 @@ const swaggerOptions = {
         },
         servers: [
             {
-                url: process.env.API_BASE_URL || `http://localhost:${PORT}`,
-                description: 'Development server'
+                url: 'https://rust-api.tafu.casa',
+                description: 'Production server'
+            },
+            {
+                url: `http://localhost:${PORT}`,
+                description: 'Local development server'
             }
         ],
         components: {
@@ -242,12 +304,13 @@ function loadItemsData() {
         
         if (fs.existsSync(itemsPath)) {
             itemsData = JSON.parse(fs.readFileSync(itemsPath, 'utf8'));
-            console.log(`✅ Loaded ${itemsData.length} items from rust_items.json`);
+            addLogEntry(`✅ Loaded ${itemsData.length} items from rust_items.json`);
+            addLogEntry('👀 Watching for changes to rust_items.json...');
         } else {
-            console.log('⚠️  rust_items.json not found, items data will be empty');
+            addLogEntry('⚠️  rust_items.json not found, items data will be empty');
         }
     } catch (error) {
-        console.error('❌ Error loading items data:', error.message);
+        addLogEntry(`❌ Error loading items data: ${error.message}`, 'error');
         itemsData = [];
     }
 }
@@ -435,31 +498,364 @@ async function buildZipArchive() {
  *                     type: string
  */
 app.get('/', (req, res) => {
-    res.json({
-        message: 'Rust Items API',
-        version: '1.0.0',
-        status: serverStatus.status >= 5 ? 'ready' : 'starting up',
-        readiness: {
-            status: serverStatus.status,
-            message: serverStatus.message,
-            ready: serverStatus.status >= 5
-        },
-        endpoints: [
-            'GET /health - Get detailed server health status',
-            'GET /ready - Check if server is ready to serve requests',
-            'GET /api/items - Get all items with crafting information',
-            'GET /api/items/:shortname - Get specific item details',
-            'GET /api/items/:shortname/image - Get item image',
-            'GET /api/categories - Get all available item categories',
-            'GET /api/rate-limit-status - Get current rate limit status',
-            'GET /api/images/download-all - Download all item images as ZIP (cached)',
-            'GET /api/images/cache-status - Get ZIP cache status'
-        ],
-        rateLimits: {
-            general: '10,000 requests per 15 minutes',
-            strict: '3,000 requests per 15 minutes (items)'
+    // Get game version information
+    let gameVersion = null;
+    try {
+        const gameDataPath = path.join(process.cwd(), 'game-data');
+        const versionFilePath = path.join(gameDataPath, 'version.txt');
+        
+        if (fs.existsSync(versionFilePath)) {
+            gameVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
         }
-    });
+    } catch (error) {
+        console.warn('Could not read game version:', error.message);
+    }
+
+    res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust Items API</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 40px; color: white; }
+        .header h1 { font-size: 3rem; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .header p { font-size: 1.2rem; opacity: 0.9; }
+        .status-card { background: white; border-radius: 15px; padding: 30px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .status-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+        .status-badge { padding: 8px 16px; border-radius: 25px; font-weight: bold; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+        .status-ready { background: #4CAF50; color: white; }
+        .status-starting { background: #FF9800; color: white; }
+        .version-info { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+        .version-item { background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 4px solid #667eea; flex: 1; min-width: 200px; }
+        .version-item h3 { color: #667eea; margin-bottom: 5px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+        .version-item p { font-size: 1.1rem; font-weight: 600; }
+        .game-version { background: #e8f5e8; border-left-color: #4CAF50; }
+        .game-version h3 { color: #4CAF50; }
+        .endpoints-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin-top: 20px; }
+        .endpoint-item { background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 4px solid #667eea; transition: transform 0.2s ease; }
+        .endpoint-item:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .endpoint-method { display: inline-block; background: #667eea; color: white; padding: 4px 8px; border-radius: 5px; font-size: 0.8rem; font-weight: bold; margin-right: 10px; }
+        .endpoint-path { font-family: 'Courier New', monospace; font-weight: bold; color: #333; }
+        .endpoint-description { margin-top: 8px; color: #666; font-size: 0.9rem; }
+        .rate-limits { background: #fff3cd; border-left-color: #ffc107; margin-top: 20px; }
+        .rate-limits h3 { color: #856404; }
+        .rate-limit-item { margin: 10px 0; padding: 10px; background: white; border-radius: 8px; border-left: 3px solid #ffc107; }
+        .action-buttons { display: flex; gap: 15px; margin-top: 30px; flex-wrap: wrap; }
+        .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: all 0.3s ease; }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5a6fd8; transform: translateY(-2px); }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; transform: translateY(-2px); }
+        .btn-warning { background: #ffc107; color: #212529; }
+        .btn-warning:hover { background: #e0a800; transform: translateY(-2px); }
+        .footer { text-align: center; margin-top: 40px; color: white; opacity: 0.8; }
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: white; margin: 5% auto; padding: 0; border-radius: 15px; width: 90%; max-width: 1000px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .modal-header { padding: 20px 30px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; border-radius: 15px 15px 0 0; }
+        .modal-header h2 { margin: 0; color: #333; }
+        .close { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; transition: color 0.3s; }
+        .close:hover { color: #000; }
+        .modal-body { padding: 20px 30px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .logs-controls { display: flex; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .logs-info { color: #666; font-size: 0.9rem; margin-left: auto; }
+        .logs-container { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 10px; font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.4; overflow-y: auto; flex: 1; min-height: 300px; }
+        .log-line { margin-bottom: 5px; word-wrap: break-word; }
+        .log-line:last-child { margin-bottom: 0; }
+        .loading { text-align: center; color: #666; font-style: italic; }
+        @media (max-width: 768px) { .header h1 { font-size: 2rem; } .status-header { flex-direction: column; align-items: flex-start; } .version-info { flex-direction: column; } .endpoints-grid { grid-template-columns: 1fr; } .modal-content { margin: 2% auto; width: 95%; } .modal-header, .modal-body { padding: 15px 20px; } .logs-controls { flex-direction: column; align-items: flex-start; } .logs-info { margin-left: 0; margin-top: 10px; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Rust Items API</h1>
+            <p>Comprehensive API for Rust game items, crafting recipes, and item images</p>
+        </div>
+        
+        <div class="status-card">
+            <div class="status-header">
+                <h2>Server Status</h2>
+                <span class="status-badge ${serverStatus.status >= 5 ? 'status-ready' : 'status-starting'}">
+                    ${serverStatus.status >= 5 ? 'Ready' : 'Starting Up'}
+                </span>
+            </div>
+            
+            <div class="version-info">
+                <div class="version-item">
+                    <h3>API Version</h3>
+                    <p>1.1.0</p>
+                </div>
+                <div class="version-item game-version">
+                    <h3>Game Version</h3>
+                    <p>${gameVersion ? `Build ${gameVersion}` : 'Not Available'}</p>
+                </div>
+                <div class="version-item">
+                    <h3>Server Status</h3>
+                    <p>${serverStatus.status}/5</p>
+                </div>
+                <div class="version-item">
+                    <h3>Last Update Check</h3>
+                    <p>${serverStatus.lastUpdateCheck.toLocaleString()}</p>
+                </div>
+            </div>
+            
+            <p><strong>Status Message:</strong> ${serverStatus.message}</p>
+            
+            <div class="action-buttons">
+                <a href="/api-docs" class="btn btn-primary">📚 API Documentation</a>
+                <button onclick="openLogsModal()" class="btn btn-secondary">📋 View Logs</button>
+                <button onclick="forceUpdate()" class="btn btn-warning">🔄 Force Update</button>
+            </div>
+        </div>
+        
+    </div>
+    
+    <!-- Logs Modal -->
+    <div id="logsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Server Console Logs</h2>
+                <span class="close" onclick="closeLogsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="logs-controls">
+                    <button onclick="refreshLogs()" class="btn btn-primary">🔄 Refresh</button>
+                    <button onclick="clearLogs()" class="btn btn-secondary">🗑️ Clear</button>
+                    <span class="logs-info">Showing last <span id="logCount">100</span> lines</span>
+                </div>
+                <div id="logsContainer" class="logs-container">
+                    <div class="loading">Loading logs...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function forceUpdate() {
+            if (confirm('This will force a game update and re-extraction. This may take several minutes. Continue?')) {
+                fetch('/api/force-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Update started! Check the server logs for progress.');
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        alert('Update failed: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    alert('Error starting update: ' + error.message);
+                });
+            }
+        }
+        
+        function openLogsModal() {
+            document.getElementById('logsModal').style.display = 'block';
+            loadLogs();
+        }
+        
+        function closeLogsModal() {
+            document.getElementById('logsModal').style.display = 'none';
+        }
+        
+        function loadLogs() {
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = '<div class="loading">Loading logs...</div>';
+            
+            fetch('/api/logs?lines=100')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.logs) {
+                        displayLogs(data.logs);
+                        document.getElementById('logCount').textContent = data.totalLines;
+                    } else {
+                        container.innerHTML = '<div class="loading">No logs available</div>';
+                    }
+                })
+                .catch(error => {
+                    container.innerHTML = '<div class="loading">Error loading logs: ' + error.message + '</div>';
+                });
+        }
+        
+        function displayLogs(logs) {
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = '';
+            
+            logs.forEach(log => {
+                const logLine = document.createElement('div');
+                logLine.className = 'log-line';
+                logLine.textContent = log;
+                container.appendChild(logLine);
+            });
+            
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function refreshLogs() {
+            loadLogs();
+        }
+        
+        function clearLogs() {
+            document.getElementById('logsContainer').innerHTML = '<div class="loading">Logs cleared</div>';
+        }
+        
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('logsModal');
+            if (event.target === modal) {
+                closeLogsModal();
+            }
+        }
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeLogsModal();
+            }
+        });
+    </script>
+</body>
+</html>
+    `);
+});
+
+/**
+ * @swagger
+ * /api/force-update:
+ *   post:
+ *     summary: Force game update and re-extraction
+ *     description: Manually trigger a game update and re-extraction process
+ *     responses:
+ *       200:
+ *         description: Update process started
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Update process started"
+ *       500:
+ *         description: Failed to start update
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Update process failed"
+ */
+app.post('/api/force-update', (req, res) => {
+    try {
+        // Check if we can access the SteamCMD manager
+        if (global.steamManager && typeof global.steamManager.performUpdateIfNeeded === 'function') {
+            // Start the update process in the background
+            global.steamManager.performUpdateIfNeeded().catch(error => {
+                console.error('Force update failed:', error.message);
+            });
+            
+            res.json({
+                success: true,
+                message: 'Update process started. Check server logs for progress.'
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Steam manager not available'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /api/logs:
+ *   get:
+ *     summary: Get server console logs
+ *     description: Retrieve recent server console logs for debugging and monitoring
+ *     parameters:
+ *       - in: query
+ *         name: lines
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Number of recent log lines to return
+ *     responses:
+ *       200:
+ *         description: Server logs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 logs:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 totalLines:
+ *                   type: integer
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Failed to retrieve logs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/logs', (req, res) => {
+    try {
+        const lines = parseInt(req.query.lines) || 100;
+        
+        // Get the last N lines from our captured logs
+        const recentLogs = serverLogs.slice(-lines);
+        
+        // Format logs for display
+        const formattedLogs = recentLogs.map(log => {
+            const time = new Date(log.timestamp).toLocaleTimeString();
+            const level = log.level.toUpperCase().padEnd(5);
+            return `[${time}] ${level} ${log.message}`;
+        });
+        
+        res.json({
+            logs: formattedLogs,
+            totalLines: serverLogs.length,
+            recentLines: recentLogs.length,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
 });
 
 /**
@@ -767,7 +1163,95 @@ app.get('/api/items/:shortname/image', (req, res) => {
     }
 });
 
-
+/**
+ * @swagger
+ * /api/version:
+ *   get:
+ *     summary: Get game file version information
+ *     description: Retrieve information about the currently downloaded Rust game files version
+ *     responses:
+ *       200:
+ *         description: Game version information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 buildId:
+ *                   type: string
+ *                   description: Steam build ID of the downloaded game files
+ *                   example: "12345678"
+ *                 hasGameFiles:
+ *                   type: boolean
+ *                   description: Whether game files are currently downloaded
+ *                   example: true
+ *                 versionFileExists:
+ *                   type: boolean
+ *                   description: Whether version information is available
+ *                   example: true
+ *                 lastUpdated:
+ *                   type: string
+ *                   format: date-time
+ *                   description: When the version file was last modified
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *                 gameDataPath:
+ *                   type: string
+ *                   description: Path to the game data directory
+ *                   example: "/opt/rust-api/game-data"
+ *       404:
+ *         description: No game files or version information found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "No game files found"
+ *                 hasGameFiles:
+ *                   type: boolean
+ *                   example: false
+ */
+app.get('/api/version', (req, res) => {
+    try {
+        const gameDataPath = path.join(process.cwd(), 'game-data');
+        const versionFilePath = path.join(gameDataPath, 'version.txt');
+        
+        // Check if game data directory exists
+        const hasGameFiles = fs.existsSync(gameDataPath);
+        const versionFileExists = fs.existsSync(versionFilePath);
+        
+        if (!hasGameFiles || !versionFileExists) {
+            return res.status(404).json({
+                error: 'No game files or version information found',
+                hasGameFiles: hasGameFiles,
+                versionFileExists: versionFileExists,
+                gameDataPath: gameDataPath
+            });
+        }
+        
+        // Read the build ID from version file
+        const buildId = fs.readFileSync(versionFilePath, 'utf8').trim();
+        
+        // Get file stats for last updated time
+        const stats = fs.statSync(versionFilePath);
+        
+        res.json({
+            buildId: buildId,
+            hasGameFiles: true,
+            versionFileExists: true,
+            lastUpdated: stats.mtime.toISOString(),
+            gameDataPath: gameDataPath
+        });
+        
+    } catch (error) {
+        res.status(500).json({ 
+            error: error.message,
+            hasGameFiles: false,
+            versionFileExists: false
+        });
+    }
+});
 
 /**
  * @swagger
@@ -996,8 +1480,27 @@ app.get('/api/images/cache-status', (req, res) => {
 
 
 
+// Serve Swagger JSON
+app.get('/api-docs/swagger.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(specs);
+});
+
 // Serve Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
+    swaggerOptions: {
+        url: '/api-docs/swagger.json',
+        validatorUrl: null,
+        displayRequestDuration: true,
+        docExpansion: 'none',
+        filter: true,
+        showRequestHeaders: true,
+        showCommonExtensions: true,
+        tryItOutEnabled: true
+    },
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'Rust Items API Documentation'
+}));
 
 // Serve item images (after API routes to avoid conflicts)
 app.use('/game-data/Bundles/items', express.static('game-data/Bundles/items'));
@@ -1015,9 +1518,9 @@ app.use((req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 Rust Items API server running on http://localhost:${PORT}`);
-    console.log(`📚 Swagger documentation available at http://localhost:${PORT}/api-docs`);
-    console.log(`📊 Loaded ${itemsData.length} items from processed data`);
+    addLogEntry(`🚀 Rust Items API server running on http://localhost:${PORT}`);
+    addLogEntry(`📚 Swagger documentation available at http://localhost:${PORT}/api-docs`);
+    addLogEntry(`📊 Loaded ${itemsData.length} items from processed data`);
 });
 
 module.exports = app;

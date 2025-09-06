@@ -534,7 +534,7 @@ class AssetRipperManager {
             // Look for ItemDefinition data in the prefab content
             const itemidMatch = content.match(/itemid:\s*([^\r\n]+)/);
             const shortnameMatch = content.match(/shortname:\s*([^\r\n]+)/);
-            const displayNameMatch = content.match(/displayName:[\s\S]*?english:\s*([^\r\n]+)/);
+            const displayNameMatch = content.match(/displayName:[\s\S]*?legacyEnglish:\s*([^\r\n]+)/);
             
             if (itemidMatch && shortnameMatch && displayNameMatch) {
                 const itemid = parseInt(itemidMatch[1].trim());
@@ -583,7 +583,7 @@ class AssetRipperManager {
                 const amountToCreate = parseInt(amountToCreateMatch[1].trim());
                 const workbenchLevelRequired = workbenchLevelMatch ? parseInt(workbenchLevelMatch[1].trim()) : null;
                 
-                // Extract ingredients (simplified parsing)
+                // Extract ingredients (simplified parsing for YAML format)
                 const ingredients = [];
                 const ingredientMatches = content.match(/itemDef:\s*{[^}]+}/g);
                 if (ingredientMatches) {
