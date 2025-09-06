@@ -10,6 +10,9 @@ const archiver = require('archiver');
 const app = express();
 const PORT = process.env.PORT || 3100;
 
+// Trust proxy headers (for rate limiting and IP detection behind reverse proxies)
+app.set('trust proxy', true);
+
 // Server readiness status
 let serverStatus = {
     status: 0, // 0: Not started, 1: Basic setup, 2: Steam setup, 3: Game downloading, 4: AssetRipper setup, 5: Ready
@@ -233,7 +236,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.1.0',
+            version: '1.1.1',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
@@ -590,7 +593,7 @@ app.get('/', (req, res) => {
             <div class="version-info">
                 <div class="version-item">
                     <h3>API Version</h3>
-                    <p>1.1.0</p>
+                    <p>1.1.1</p>
                 </div>
                 <div class="version-item game-version">
                     <h3>Game Version</h3>
