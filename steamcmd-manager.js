@@ -818,6 +818,55 @@ quit`;
         }
     }
 
+    async forceExtraction() {
+        try {
+            console.log('🔄 Force extraction requested - running AssetRipper extraction...');
+            console.log('');
+            
+            // Run AssetRipper extraction
+            console.log('🔄 Running AssetRipper extraction...');
+            try {
+                const AssetRipperManager = require('./asset-ripper-manager');
+                const manager = new AssetRipperManager();
+                await manager.extractRustItems();
+                
+                // Verify extraction was successful
+                const rustItemsPath = path.join(process.cwd(), 'processed-data', 'rust_items.json');
+                if (fs.existsSync(rustItemsPath)) {
+                    const itemsData = JSON.parse(fs.readFileSync(rustItemsPath, 'utf8'));
+                    if (itemsData && Array.isArray(itemsData) && itemsData.length > 0) {
+                        console.log(`✅ AssetRipper extraction completed successfully! Extracted ${itemsData.length} items.`);
+                        
+                        // Remove any failure marker if it exists
+                        const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+                        if (fs.existsSync(extractionFailurePath)) {
+                            try {
+                                fs.unlinkSync(extractionFailurePath);
+                                console.log('✅ Removed extraction failure marker.');
+                            } catch (error) {
+                                console.log('Could not remove extraction failure marker:', error.message);
+                            }
+                        }
+                    } else {
+                        console.log('⚠️  AssetRipper extraction completed but no items were found.');
+                        this.markExtractionFailure();
+                    }
+                } else {
+                    console.log('❌ AssetRipper extraction failed - rust_items.json was not created.');
+                    this.markExtractionFailure();
+                }
+            } catch (extractionError) {
+                console.error('❌ AssetRipper extraction failed:', extractionError.message);
+                this.markExtractionFailure();
+            }
+            
+            console.log('✅ Force extraction completed!');
+        } catch (error) {
+            console.error('❌ Error during force extraction:', error.message);
+            throw error;
+        }
+    }
+
     async run() {
         try {
             console.log('=== SteamCMD Manager ===');

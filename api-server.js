@@ -237,7 +237,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.1.2',
+            version: '1.2.0',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
@@ -594,7 +594,7 @@ app.get('/', (req, res) => {
             <div class="version-info">
                 <div class="version-item">
                     <h3>API Version</h3>
-                    <p>1.1.2</p>
+                    <p>1.2.0</p>
                 </div>
                 <div class="version-item game-version">
                     <h3>Game Version</h3>
@@ -771,15 +771,15 @@ app.get('/', (req, res) => {
 app.post('/api/force-update', (req, res) => {
     try {
         // Check if we can access the SteamCMD manager
-        if (global.steamManager && typeof global.steamManager.performUpdateIfNeeded === 'function') {
-            // Start the update process in the background
-            global.steamManager.performUpdateIfNeeded().catch(error => {
-                console.error('Force update failed:', error.message);
+        if (global.steamManager && typeof global.steamManager.forceExtraction === 'function') {
+            // Start the force extraction process in the background
+            global.steamManager.forceExtraction().catch(error => {
+                console.error('Force extraction failed:', error.message);
             });
             
             res.json({
                 success: true,
-                message: 'Update process started. Check server logs for progress.'
+                message: 'Force extraction started. Check server logs for progress.'
             });
         } else {
             res.status(500).json({

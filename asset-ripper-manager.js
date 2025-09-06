@@ -490,7 +490,18 @@ class AssetRipperManager {
             }
         }
         
-        console.log(`Extracted ${items.length} items and ${blueprints.length} blueprints`);
+        console.log(`Extracted ${items.length} items and ${blueprints.length} blueprints from prefabs`);
+        
+        // Also process JSON item definition files from game-data
+        const jsonItems = await this.extractJsonItems();
+        console.log(`Extracted ${jsonItems.length} additional items from JSON files`);
+        
+        // Merge items, avoiding duplicates based on itemid
+        const existingItemIds = new Set(items.map(item => item.itemid));
+        const newJsonItems = jsonItems.filter(item => !existingItemIds.has(item.itemid));
+        items.push(...newJsonItems);
+        
+        console.log(`Total items after merging: ${items.length}`);
         
         // Update status to indicate extraction completed
         if (global.serverStatus && global.serverStatus.updateStatus) {
@@ -502,6 +513,72 @@ class AssetRipperManager {
         }
         
         return { items, blueprints };
+    }
+
+    async extractJsonItems() {
+        console.log('Extracting items from JSON definition files...');
+        
+        const itemsPath = path.join(this.directories.gameData, 'Bundles', 'items');
+        
+        if (!fs.existsSync(itemsPath)) {
+            console.log('No items directory found in game-data');
+            return [];
+        }
+        
+        const jsonFiles = fs.readdirSync(itemsPath).filter(file => file.endsWith('.json'));
+        console.log(`Found ${jsonFiles.length} JSON item definition files`);
+        
+        const items = [];
+        
+        for (let i = 0; i < jsonFiles.length; i++) {
+            const jsonFile = jsonFiles[i];
+            
+            if (i % 100 === 0) {
+                console.log(`Processing JSON file ${i + 1}/${jsonFiles.length}: ${jsonFile}`);
+            }
+            
+            try {
+                const filePath = path.join(itemsPath, jsonFile);
+                const content = fs.readFileSync(filePath, 'utf8');
+                const itemData = JSON.parse(content);
+                
+                // Convert JSON item data to the same format as prefab items
+                if (itemData.itemid && itemData.shortname && itemData.Name) {
+                    const item = {
+                        itemid: itemData.itemid,
+                        shortname: itemData.shortname,
+                        displayName: itemData.Name,
+                        description: itemData.Description || '',
+                        category: this.categoryMap[itemData.Category] || 'Unknown',
+                        categoryId: itemData.Category,
+                        stackable: itemData.stackable || 1,
+                        volume: itemData.volume || 0,
+                        maxDraggable: itemData.maxDraggable || 0,
+                        itemType: itemData.ItemType || 'Generic',
+                        amountType: itemData.AmountType || 'Count',
+                        quickDespawn: itemData.quickDespawn || false,
+                        rarity: itemData.rarity || 'None',
+                        condition: itemData.condition || null,
+                        parent: itemData.Parent || 0,
+                        isWearable: itemData.isWearable || false,
+                        isHoldable: itemData.isHoldable || false,
+                        isUsable: itemData.isUsable || false,
+                        hasSkins: itemData.HasSkins || false,
+                        ingredients: [], // JSON files don't contain crafting recipes
+                        craftTime: 0,
+                        amountToCreate: 1,
+                        workbenchLevel: 0,
+                        source: 'json' // Mark as coming from JSON files
+                    };
+                    
+                    items.push(item);
+                }
+            } catch (error) {
+                console.error(`Error processing JSON file ${jsonFile}:`, error.message);
+            }
+        }
+        
+        return items;
     }
 
     findPrefabFiles(dir) {
