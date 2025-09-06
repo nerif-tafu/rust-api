@@ -11,7 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 3100;
 
 // Trust proxy headers (for rate limiting and IP detection behind reverse proxies)
-app.set('trust proxy', true);
+// Set to 1 to trust the first proxy in the chain (e.g., Cloudflare, nginx)
+app.set('trust proxy', 1);
 
 // Server readiness status
 let serverStatus = {
@@ -236,7 +237,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.1.1',
+            version: '1.1.2',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
@@ -593,7 +594,7 @@ app.get('/', (req, res) => {
             <div class="version-info">
                 <div class="version-item">
                     <h3>API Version</h3>
-                    <p>1.1.1</p>
+                    <p>1.1.2</p>
                 </div>
                 <div class="version-item game-version">
                     <h3>Game Version</h3>

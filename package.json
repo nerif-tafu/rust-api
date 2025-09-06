@@ -1,6 +1,6 @@
 {
   "name": "asset-ripper-rust-extractor",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Extract item information from Rust game files using AssetRipper API",
   "main": "index.js",
   "scripts": {
