@@ -826,8 +826,17 @@ quit`;
             console.log('🔄 Force extraction requested - forcing game update and re-extraction...');
             console.log('');
             
-            // First, force a game update
-            console.log('🔄 Force updating Rust game files...');
+            // First, delete existing game files to force fresh download
+            console.log('🔄 Cleaning existing game files to force fresh download...');
+            const gameDataDir = path.resolve(this.directories.gameData);
+            if (fs.existsSync(gameDataDir)) {
+                console.log('🗑️  Removing existing game files...');
+                fs.rmSync(gameDataDir, { recursive: true, force: true });
+                console.log('✅ Existing game files removed');
+            }
+            
+            // Force a fresh game download
+            console.log('🔄 Force downloading fresh Rust game files...');
             await this.downloadRustGame(true); // Pass true for force update
             
             // Find and copy bundle file
