@@ -202,12 +202,12 @@ class SteamCMDManager {
 
     // ===== STEAM DOWNLOAD METHODS =====
 
-    async downloadRustGame() {
-        console.log('Starting Rust game download...');
+    async downloadRustGame(forceUpdate = false) {
+        console.log(forceUpdate ? 'Starting Rust game force update...' : 'Starting Rust game download...');
         
         // Update status to indicate game downloading
         if (global.serverStatus && global.serverStatus.updateStatus) {
-            global.serverStatus.updateStatus(3, 'Downloading Rust game files - this may take a while', {
+            global.serverStatus.updateStatus(3, forceUpdate ? 'Force updating Rust game files - this may take a while' : 'Downloading Rust game files - this may take a while', {
                 stage: 'download',
                 progress: 0
             });
@@ -225,7 +225,7 @@ class SteamCMDManager {
         }
         
         // Create Steam script for downloading
-        const scriptContent = this.createSteamScript();
+        const scriptContent = this.createSteamScript(forceUpdate);
         const scriptPath = path.join(path.dirname(steamCmdPath), 'download_rust.txt');
         
         fs.writeFileSync(scriptPath, scriptContent);
@@ -374,14 +374,17 @@ class SteamCMDManager {
         });
     }
 
-    createSteamScript() {
+    createSteamScript(forceUpdate = false) {
         const gameDataDir = path.resolve(this.directories.gameData);
+        
+        // Use 'validate' for normal checks, full 'app_update' for force updates
+        const updateCommand = forceUpdate ? `app_update ${this.steamAppId}` : `app_update ${this.steamAppId} validate`;
         
         return `@ShutdownOnFailedCommand 1
 @NoPromptForPassword 1
 force_install_dir "${gameDataDir}"
 login ${this.steamUsername} ${this.steamPassword}
-app_update ${this.steamAppId} validate
+${updateCommand}
 quit`;
     }
 
@@ -820,7 +823,22 @@ quit`;
 
     async forceExtraction() {
         try {
-            console.log('🔄 Force extraction requested - running AssetRipper extraction...');
+            console.log('🔄 Force extraction requested - forcing game update and re-extraction...');
+            console.log('');
+            
+            // First, force a game update
+            console.log('🔄 Force updating Rust game files...');
+            await this.downloadRustGame(true); // Pass true for force update
+            
+            // Find and copy bundle file
+            const bundlePath = this.findRustBundleFile();
+            if (bundlePath) {
+                this.copyBundleToGameData(bundlePath);
+            } else {
+                console.log('⚠️  Rust bundle file not found after force update. You may need to manually locate it.');
+            }
+            
+            console.log('✅ Force update completed successfully!');
             console.log('');
             
             // Run AssetRipper extraction
