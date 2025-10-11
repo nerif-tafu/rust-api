@@ -620,6 +620,26 @@ quit`;
         return null;
     }
 
+    findRustBundleInSteamInstallation() {
+        // Common Steam installation paths
+        const steamPaths = [
+            'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Rust\\Bundles\\shared\\items.preload.bundle',
+            'C:\\Program Files\\Steam\\steamapps\\common\\Rust\\Bundles\\shared\\items.preload.bundle',
+            'D:\\Steam\\steamapps\\common\\Rust\\Bundles\\shared\\items.preload.bundle',
+            'E:\\Steam\\steamapps\\common\\Rust\\Bundles\\shared\\items.preload.bundle'
+        ];
+        
+        for (const bundlePath of steamPaths) {
+            if (fs.existsSync(bundlePath)) {
+                console.log(`Found Rust bundle in Steam installation: ${bundlePath}`);
+                return bundlePath;
+            }
+        }
+        
+        console.log('Rust bundle not found in common Steam installation paths');
+        return null;
+    }
+
     copyBundleToGameData(bundlePath) {
         const targetPath = path.join(process.cwd(), 'game-data', 'Bundles', 'shared', 'items.preload.bundle');
         
@@ -821,19 +841,82 @@ quit`;
         }
     }
 
+    // Helper function to safely delete directories, ignoring downloading folder
+    async safeDeleteDirectory(dirPath, description) {
+        try {
+            if (fs.existsSync(dirPath)) {
+                console.log(`🗑️  Removing ${description}...`);
+                
+                // Use a custom deletion function that ignores the downloading folder
+                await this.deleteDirectoryIgnoringDownloading(dirPath);
+                console.log(`✅ ${description} removed`);
+                return true;
+            } else {
+                console.log(`✅ ${description} already removed`);
+                return true;
+            }
+        } catch (error) {
+            console.log(`⚠️  Could not remove ${description}: ${error.message}`);
+            // Don't throw error, just log it and continue
+            return false;
+        }
+    }
+
+    // Helper function to delete directory contents while ignoring locked folders
+    async deleteDirectoryIgnoringDownloading(dirPath) {
+        const items = fs.readdirSync(dirPath);
+        
+        for (const item of items) {
+            const itemPath = path.join(dirPath, item);
+            
+            try {
+                const stat = fs.statSync(itemPath);
+                
+                // Skip folders that commonly contain locked files
+                if (item === 'downloading' || item === 'temp' || item === 'appcache') {
+                    console.log(`⏭️  Skipping ${item} folder (may contain locked files)`);
+                    continue;
+                }
+                
+                if (stat.isDirectory()) {
+                    await this.deleteDirectoryIgnoringDownloading(itemPath);
+                    fs.rmdirSync(itemPath);
+                } else {
+                    fs.unlinkSync(itemPath);
+                }
+            } catch (error) {
+                // If we can't access or delete an item, skip it
+                console.log(`⏭️  Skipping ${item} (${error.code || 'locked'})`);
+                continue;
+            }
+        }
+    }
+
     async forceExtraction() {
         try {
             console.log('🔄 Force extraction requested - forcing game update and re-extraction...');
             console.log('');
             
-            // First, delete existing game files to force fresh download
-            console.log('🔄 Cleaning existing game files to force fresh download...');
-            const gameDataDir = path.resolve(this.directories.gameData);
-            if (fs.existsSync(gameDataDir)) {
-                console.log('🗑️  Removing existing game files...');
-                fs.rmSync(gameDataDir, { recursive: true, force: true });
-                console.log('✅ Existing game files removed');
-            }
+            // Clean all data directories to ensure completely fresh extraction
+            console.log('🔄 Cleaning all data directories for completely fresh extraction...');
+            
+            // Delete directories with retry logic to handle locked files
+            await this.safeDeleteDirectory(
+                path.resolve(this.directories.gameData), 
+                'existing game files'
+            );
+            
+            await this.safeDeleteDirectory(
+                path.resolve(process.cwd(), 'export-data'), 
+                'existing export data'
+            );
+            
+            await this.safeDeleteDirectory(
+                path.resolve(process.cwd(), 'processed-data'), 
+                'existing processed data'
+            );
+            
+            console.log('✅ All data directories cleaned - starting completely fresh extraction');
             
             // Force a fresh game download
             console.log('🔄 Force downloading fresh Rust game files...');
@@ -844,7 +927,16 @@ quit`;
             if (bundlePath) {
                 this.copyBundleToGameData(bundlePath);
             } else {
-                console.log('⚠️  Rust bundle file not found after force update. You may need to manually locate it.');
+                console.log('⚠️  Rust bundle file not found after force update. Trying to find in Steam installation...');
+                
+                // Try to find the bundle file in the user's Steam installation
+                const steamBundlePath = this.findRustBundleInSteamInstallation();
+                if (steamBundlePath) {
+                    console.log(`Found Rust bundle in Steam installation: ${steamBundlePath}`);
+                    this.copyBundleToGameData(steamBundlePath);
+                } else {
+                    console.log('❌ Rust bundle file not found in Steam installation either. You may need to manually locate it.');
+                }
             }
             
             console.log('✅ Force update completed successfully!');
@@ -872,6 +964,16 @@ quit`;
                                 console.log('✅ Removed extraction failure marker.');
                             } catch (error) {
                                 console.log('Could not remove extraction failure marker:', error.message);
+                            }
+                        }
+                        
+                        // Re-setup file watcher after successful extraction
+                        if (global.reSetupFileWatcher) {
+                            try {
+                                global.reSetupFileWatcher();
+                                console.log('✅ File watcher re-setup completed.');
+                            } catch (error) {
+                                console.log('Could not re-setup file watcher:', error.message);
                             }
                         }
                     } else {

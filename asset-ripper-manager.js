@@ -54,6 +54,7 @@ class AssetRipperManager {
             9: 'Traps',
             10: 'Misc',
             13: 'Deployable',
+            14: 'Component',
             16: 'Vehicle',
             17: 'Electrical'
         };
@@ -623,21 +624,27 @@ class AssetRipperManager {
             // Look for ItemDefinition data in the prefab content
             const itemidMatch = content.match(/itemid:\s*([^\r\n]+)/);
             const shortnameMatch = content.match(/shortname:\s*([^\r\n]+)/);
-            const displayNameMatch = content.match(/displayName:[\s\S]*?legacyEnglish:\s*([^\r\n]+)/);
+            const displayNameMatch = content.match(/displayName:[\s\S]*?token:\s*([^\r\n]+)/);
             
             if (itemidMatch && shortnameMatch && displayNameMatch) {
                 const itemid = parseInt(itemidMatch[1].trim());
                 const shortname = shortnameMatch[1].trim();
-                const displayName = displayNameMatch[1].trim();
+                let displayName = displayNameMatch[1].trim();
                 
                 // Extract additional fields
                 const categoryMatch = content.match(/category:\s*([^\r\n]+)/);
                 const stackableMatch = content.match(/stackable:\s*([^\r\n]+)/);
                 const volumeMatch = content.match(/volume:\s*([^\r\n]+)/);
                 
-                const category = categoryMatch ? parseInt(categoryMatch[1].trim()) : null;
+                let category = categoryMatch ? parseInt(categoryMatch[1].trim()) : null;
                 const stackable = stackableMatch ? parseInt(stackableMatch[1].trim()) : null;
                 const volume = volumeMatch ? parseInt(volumeMatch[1].trim()) : null;
+                
+                // Special handling for blueprint fragments
+                if (shortname === 'basicblueprintfragment' || shortname === 'advancedblueprintfragment') {
+                    displayName = shortname === 'basicblueprintfragment' ? 'Basic Blueprint Fragment' : 'Advanced Blueprint Fragment';
+                    category = 14; // Use a custom category for Component
+                }
                 
                 // Extract pathID from the MonoBehaviour line
                 const pathIDMatch = content.match(/!u!114 &(\d+)/);

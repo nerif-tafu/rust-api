@@ -324,38 +324,72 @@ loadItemsData();
 
 // Watch for changes to rust_items.json and reload automatically
 const itemsDataPath = path.join(__dirname, 'processed-data', 'rust_items.json');
-if (fs.existsSync(itemsDataPath)) {
-    console.log('👀 Watching for changes to rust_items.json...');
-    
-    // Use fs.watch for file monitoring (works on Linux)
-    fs.watch(itemsDataPath, (eventType, filename) => {
-        if (eventType === 'change' && filename === 'rust_items.json') {
-            console.log('🔄 rust_items.json changed, reloading data...');
-            // Small delay to ensure file write is complete
-            setTimeout(() => {
-                loadItemsData();
-                console.log('✅ Items data reloaded successfully');
-            }, 1000);
-        }
-    });
-    
-    // Fallback: also check for changes every 30 seconds as backup
-    setInterval(() => {
+let fileWatcher = null;
+
+function setupFileWatcher() {
+    if (fs.existsSync(itemsDataPath)) {
+        console.log('👀 Watching for changes to rust_items.json...');
+        
         try {
-            const stats = fs.statSync(itemsDataPath);
-            const currentMtime = stats.mtime.getTime();
+            // Use fs.watch for file monitoring with error handling
+            fileWatcher = fs.watch(itemsDataPath, (eventType, filename) => {
+                if (eventType === 'change' && filename === 'rust_items.json') {
+                    console.log('🔄 rust_items.json changed, reloading data...');
+                    // Small delay to ensure file write is complete
+                    setTimeout(() => {
+                        loadItemsData();
+                        console.log('✅ Items data reloaded successfully');
+                    }, 1000);
+                }
+            });
             
-            if (!itemsData.lastModified || currentMtime > itemsData.lastModified) {
-                console.log('🔄 rust_items.json modified, reloading data...');
-                loadItemsData();
-                itemsData.lastModified = currentMtime;
-                console.log('✅ Items data reloaded successfully');
-            }
+            // Handle watcher errors gracefully
+            fileWatcher.on('error', (error) => {
+                console.log('⚠️  File watcher error (this is normal during updates):', error.message);
+                // Don't crash the server, just log the error
+            });
+            
         } catch (error) {
-            // File might not exist yet, ignore errors
+            console.log('⚠️  Could not set up file watcher (this is normal during updates):', error.message);
         }
-    }, 30000);
+    }
 }
+
+// Set up the file watcher initially
+setupFileWatcher();
+
+// Fallback: also check for changes every 30 seconds as backup
+setInterval(() => {
+    try {
+        const stats = fs.statSync(itemsDataPath);
+        const currentMtime = stats.mtime.getTime();
+        
+        if (!itemsData.lastModified || currentMtime > itemsData.lastModified) {
+            console.log('🔄 rust_items.json modified, reloading data...');
+            loadItemsData();
+            itemsData.lastModified = currentMtime;
+            console.log('✅ Items data reloaded successfully');
+        }
+    } catch (error) {
+        // File might not exist yet, ignore errors
+    }
+}, 30000);
+
+// Function to re-setup file watcher (useful after force updates)
+function reSetupFileWatcher() {
+    if (fileWatcher) {
+        try {
+            fileWatcher.close();
+        } catch (error) {
+            // Ignore errors when closing
+        }
+        fileWatcher = null;
+    }
+    setupFileWatcher();
+}
+
+// Export the function for use by other modules
+global.reSetupFileWatcher = reSetupFileWatcher;
 
 // Helper function to check if item image exists
 function getItemImageUrl(shortname) {
