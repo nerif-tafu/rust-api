@@ -496,23 +496,35 @@ class AssetRipperManager {
         const jsonItems = await this.extractJsonItems();
         console.log(`Extracted ${jsonItems.length} additional items from JSON files`);
         
-        // Merge items, avoiding duplicates based on itemid
-        const existingItemIds = new Set(items.map(item => item.itemid));
-        const newJsonItems = jsonItems.filter(item => !existingItemIds.has(item.itemid));
-        items.push(...newJsonItems);
+        // Merge items, prioritizing JSON data over prefab data
+        // First, update existing items with JSON data if available
+        const jsonItemsMap = new Map(jsonItems.map(item => [item.itemid, item]));
+        const updatedItems = items.map(item => {
+            const jsonItem = jsonItemsMap.get(item.itemid);
+            if (jsonItem) {
+                // JSON data exists, use it to update display name and other fields
+                return { ...item, ...jsonItem };
+            }
+            return item;
+        });
         
-        console.log(`Total items after merging: ${items.length}`);
+        // Then, add new items that don't exist in prefab data
+        const existingItemIds = new Set(updatedItems.map(item => item.itemid));
+        const newJsonItems = jsonItems.filter(item => !existingItemIds.has(item.itemid));
+        const allItems = [...updatedItems, ...newJsonItems];
+        
+        console.log(`Total items after merging: ${allItems.length}`);
         
         // Update status to indicate extraction completed
         if (global.serverStatus && global.serverStatus.updateStatus) {
             global.serverStatus.updateStatus(5, 'AssetRipper extraction completed - server ready to serve requests', {
                 stage: 'extraction_complete',
-                itemsCount: items.length,
+                itemsCount: allItems.length,
                 blueprintsCount: blueprints.length
             });
         }
         
-        return { items, blueprints };
+        return { items: allItems, blueprints };
     }
 
     async extractJsonItems() {
