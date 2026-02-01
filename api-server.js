@@ -704,13 +704,8 @@ app.get('/', (req, res) => {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        if (data.skipped) {
-                            alert(data.message || 'Server is already up to date. No force update needed.');
-                            setTimeout(() => location.reload(), 1000);
-                        } else {
-                            alert('Update started! Check the server logs for progress.');
-                            setTimeout(() => location.reload(), 2000);
-                        }
+                        alert('Force update started! Check the server logs for progress.');
+                        setTimeout(() => location.reload(), 2000);
                     } else {
                         alert('Update failed: ' + (data.error || 'Unknown error'));
                     }
@@ -921,20 +916,7 @@ app.post('/api/force-update', async (req, res) => {
                 error: 'Steam manager not available'
             });
         }
-        // Use Steam UpToDateCheck API to see if we actually need a force update
-        if (typeof global.steamManager.checkSteamUpToDate === 'function') {
-            const upToDateResult = await global.steamManager.checkSteamUpToDate();
-            if (!upToDateResult.needUpdate) {
-                return res.json({
-                    success: true,
-                    skipped: true,
-                    message: 'Server is already up to date. No force update needed.',
-                    upToDate: true,
-                    currentVersion: upToDateResult.currentVersion
-                });
-            }
-        }
-        // Start the force extraction process in the background
+        // Force update always runs full extraction regardless of UpToDateCheck
         global.steamManager.forceExtraction().catch(error => {
             console.error('Force extraction failed:', error.message);
         });
