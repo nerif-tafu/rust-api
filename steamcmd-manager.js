@@ -438,6 +438,21 @@ quit`;
             }
         }
         
+        // Prefer Steam UpToDateCheck API: use stored version if we have it, otherwise version=0 (get required_version, need update)
+        try {
+            const steamApiVersionPath = this.getSteamApiGameVersionPath();
+            const hasStoredVersion = fs.existsSync(steamApiVersionPath);
+            const apiResult = await this.checkSteamUpToDate(hasStoredVersion ? null : 0);
+            if (apiResult.needUpdate) {
+                console.log(`🔄 Steam UpToDateCheck: server out of date (current: ${apiResult.currentVersion ?? 'none'}, required: ${apiResult.requiredVersion ?? '?'}). ${apiResult.message ?? ''}`);
+                return true;
+            }
+            console.log(`✅ Steam UpToDateCheck: server is up to date (version ${apiResult.currentVersion})`);
+            return false;
+        } catch (e) {
+            console.log(`⚠️  UpToDateCheck API failed, falling back to SteamCMD: ${e.message}`);
+        }
+
         const steamCmdPath = this.getSteamCmdPath();
         if (!fs.existsSync(steamCmdPath)) {
             console.log('SteamCMD not found. Cannot check version without SteamCMD.');
@@ -591,10 +606,93 @@ quit`;
         const versionFilePath = path.join(process.cwd(), 'game-data', 'version.txt');
         try {
             fs.writeFileSync(versionFilePath, buildId);
-            console.log(`💾 Saved game version: ${buildId}`);
+            console.log(`💾 Saved game version (build ID): ${buildId}`);
         } catch (error) {
             console.warn(`Warning: Could not save game version: ${error.message}`);
         }
+    }
+
+    /** Path to the file storing the Steam UpToDateCheck API version (e.g. 1065), not build ID. */
+    getSteamApiGameVersionPath() {
+        return path.join(process.cwd(), 'game-data', 'steamapi_game_version.txt');
+    }
+
+    /** Create steamapi_game_version.txt with "0" if it doesn't exist (so API is called with version=0 until first update). */
+    ensureSteamApiGameVersionFile() {
+        const filePath = this.getSteamApiGameVersionPath();
+        if (fs.existsSync(filePath)) return;
+        const gameDataDir = path.resolve(this.directories.gameData);
+        if (!fs.existsSync(gameDataDir)) {
+            fs.mkdirSync(gameDataDir, { recursive: true });
+        }
+        try {
+            fs.writeFileSync(filePath, '0');
+            console.log('📝 Created steamapi_game_version.txt (version 0) – will check for updates');
+        } catch (error) {
+            console.warn(`Warning: Could not create steamapi_game_version.txt: ${error.message}`);
+        }
+    }
+
+    /** Save the Steam API game version (used by UpToDateCheck) after a successful update. */
+    saveSteamApiGameVersion(version) {
+        const filePath = this.getSteamApiGameVersionPath();
+        try {
+            fs.writeFileSync(filePath, String(version));
+            console.log(`💾 Saved Steam API game version: ${version}`);
+        } catch (error) {
+            console.warn(`Warning: Could not save Steam API game version: ${error.message}`);
+        }
+    }
+
+    /**
+     * Check if our installed version is up to date using Steam's UpToDateCheck API.
+     * Uses GET https://api.steampowered.com/ISteamApps/UpToDateCheck/v1/?appid=&version=
+     * Version is read from steamapi_game_version.txt unless versionOverride is provided (e.g. 0 to get required_version after update).
+     * @param {number|null} [versionOverride] - If provided, use this version for the API call instead of reading from file.
+     * @returns {Promise<{needUpdate: boolean, upToDate: boolean, currentVersion: number|null, requiredVersion: number|null, message: string|null}>}
+     */
+    async checkSteamUpToDate(versionOverride = null) {
+        let currentVersion = versionOverride;
+        if (currentVersion == null) {
+            this.ensureSteamApiGameVersionFile();
+            const versionFilePath = this.getSteamApiGameVersionPath();
+            if (fs.existsSync(versionFilePath)) {
+                try {
+                    currentVersion = parseInt(fs.readFileSync(versionFilePath, 'utf8').trim(), 10);
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+        if (currentVersion == null || isNaN(currentVersion)) {
+            return { needUpdate: true, upToDate: false, currentVersion: null, requiredVersion: null, message: 'No stored Steam API version' };
+        }
+        const url = `https://api.steampowered.com/ISteamApps/UpToDateCheck/v1/?appid=${this.steamAppId}&version=${currentVersion}`;
+        return new Promise((resolve) => {
+            https.get(url, (res) => {
+                let data = '';
+                res.on('data', chunk => { data += chunk; });
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        const r = json.response || {};
+                        const upToDate = r.success === true && r.up_to_date === true;
+                        resolve({
+                            needUpdate: !upToDate,
+                            upToDate,
+                            currentVersion,
+                            requiredVersion: r.required_version != null ? r.required_version : null,
+                            message: r.message || null
+                        });
+                    } catch (e) {
+                        resolve({ needUpdate: true, upToDate: false, currentVersion, requiredVersion: null, message: e.message });
+                    }
+                });
+            }).on('error', (err) => {
+                console.warn(`Steam UpToDateCheck API error: ${err.message}`);
+                resolve({ needUpdate: true, upToDate: false, currentVersion, requiredVersion: null, message: err.message });
+            });
+        });
     }
 
     findRustBundleFile() {
@@ -745,12 +843,9 @@ quit`;
         console.log('Press Ctrl+C to stop monitoring');
         console.log('');
         
-        // Initial check
-        await this.performUpdateIfNeeded();
-        
-        // Set up continuous monitoring
         const intervalMs = checkIntervalMinutes * 60 * 1000;
         
+        // Set up the interval first so periodic checks run even if the initial check throws
         setInterval(async () => {
             try {
                 await this.performUpdateIfNeeded();
@@ -759,22 +854,28 @@ quit`;
             }
         }, intervalMs);
         
-        // Keep the process running
         process.on('SIGINT', () => {
             console.log('\n🛑 Monitoring stopped by user');
             process.exit(0);
         });
         
-        // Keep alive
-        setInterval(() => {
-            // This keeps the process running
-        }, 1000);
+        // Run initial check on startup (after interval is already scheduled)
+        try {
+            await this.performUpdateIfNeeded();
+        } catch (error) {
+            console.error(`❌ Error during startup update check: ${error.message}`);
+        }
     }
 
     async performUpdateIfNeeded() {
         try {
             const needsUpdate = await this.checkGameVersion();
-            
+            let requiredVersion = null;
+            if (needsUpdate) {
+                const upToDateResult = await this.checkSteamUpToDate();
+                requiredVersion = upToDateResult.requiredVersion;
+            }
+
             if (needsUpdate) {
                 console.log('🔄 Update needed! Starting download and extraction process...');
                 console.log('');
@@ -806,6 +907,16 @@ quit`;
                         const itemsData = JSON.parse(fs.readFileSync(rustItemsPath, 'utf8'));
                         if (itemsData && Array.isArray(itemsData) && itemsData.length > 0) {
                             console.log(`✅ AssetRipper extraction completed successfully! Extracted ${itemsData.length} items.`);
+                            
+                            // Save Steam API game version so next UpToDateCheck uses correct version
+                            if (requiredVersion != null) {
+                                this.saveSteamApiGameVersion(requiredVersion);
+                            } else {
+                                const r = await this.checkSteamUpToDate(0);
+                                if (r.requiredVersion != null) {
+                                    this.saveSteamApiGameVersion(r.requiredVersion);
+                                }
+                            }
                             
                             // Remove any failure marker if it exists
                             const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
@@ -955,6 +1066,12 @@ quit`;
                     const itemsData = JSON.parse(fs.readFileSync(rustItemsPath, 'utf8'));
                     if (itemsData && Array.isArray(itemsData) && itemsData.length > 0) {
                         console.log(`✅ AssetRipper extraction completed successfully! Extracted ${itemsData.length} items.`);
+                        
+                        // Save Steam API game version (UpToDateCheck version) after successful force update
+                        const upToDateResult = await this.checkSteamUpToDate(0);
+                        if (upToDateResult.requiredVersion != null) {
+                            this.saveSteamApiGameVersion(upToDateResult.requiredVersion);
+                        }
                         
                         // Remove any failure marker if it exists
                         const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');

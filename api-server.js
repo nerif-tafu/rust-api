@@ -28,6 +28,15 @@ let serverStatus = {
 let serverLogs = [];
 const MAX_LOG_LINES = 1000;
 
+// SSE clients for live log streaming (Set of res objects)
+const logStreamClients = new Set();
+
+function formatLogLine(log) {
+    const time = new Date(log.timestamp).toLocaleTimeString();
+    const level = log.level.toUpperCase().padEnd(5);
+    return `[${time}] ${level} ${log.message}`;
+}
+
 // Function to add log entry
 function addLogEntry(message, level = 'info') {
     const timestamp = new Date().toISOString();
@@ -42,6 +51,16 @@ function addLogEntry(message, level = 'info') {
     // Keep only the last MAX_LOG_LINES entries
     if (serverLogs.length > MAX_LOG_LINES) {
         serverLogs = serverLogs.slice(-MAX_LOG_LINES);
+    }
+    
+    // Push new log to all SSE clients (live update)
+    const formatted = formatLogLine(logEntry);
+    for (const res of logStreamClients) {
+        try {
+            res.write(`data: ${JSON.stringify({ log: formatted })}\n\n`);
+        } catch (err) {
+            logStreamClients.delete(res);
+        }
     }
     
     // Also log to console using the original console.log to avoid recursion
@@ -685,8 +704,13 @@ app.get('/', (req, res) => {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        alert('Update started! Check the server logs for progress.');
-                        setTimeout(() => location.reload(), 2000);
+                        if (data.skipped) {
+                            alert(data.message || 'Server is already up to date. No force update needed.');
+                            setTimeout(() => location.reload(), 1000);
+                        } else {
+                            alert('Update started! Check the server logs for progress.');
+                            setTimeout(() => location.reload(), 2000);
+                        }
                     } else {
                         alert('Update failed: ' + (data.error || 'Unknown error'));
                     }
@@ -697,13 +721,53 @@ app.get('/', (req, res) => {
             }
         }
         
+        let logsEventSource = null;
+        
         function openLogsModal() {
             document.getElementById('logsModal').style.display = 'block';
             loadLogs();
+            startLogsStream();
         }
         
         function closeLogsModal() {
+            stopLogsStream();
             document.getElementById('logsModal').style.display = 'none';
+        }
+        
+        function startLogsStream() {
+            stopLogsStream();
+            logsEventSource = new EventSource('/api/logs/stream');
+            logsEventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.log) {
+                        appendLogLine(data.log);
+                    }
+                } catch (e) {}
+            };
+            logsEventSource.onerror = function() {
+                logsEventSource.close();
+                logsEventSource = null;
+            };
+        }
+        
+        function stopLogsStream() {
+            if (logsEventSource) {
+                logsEventSource.close();
+                logsEventSource = null;
+            }
+        }
+        
+        function appendLogLine(formattedLog) {
+            const container = document.getElementById('logsContainer');
+            if (!container || container.querySelector('.loading')) return;
+            const logLine = document.createElement('div');
+            logLine.className = 'log-line';
+            logLine.textContent = formattedLog;
+            container.appendChild(logLine);
+            container.scrollTop = container.scrollHeight;
+            const countEl = document.getElementById('logCount');
+            if (countEl) countEl.textContent = parseInt(countEl.textContent || '0', 10) + 1;
         }
         
         function loadLogs() {
@@ -736,7 +800,7 @@ app.get('/', (req, res) => {
                 container.appendChild(logLine);
             });
             
-            // Scroll to bottom
+            document.getElementById('logCount').textContent = logs.length;
             container.scrollTop = container.scrollHeight;
         }
         
@@ -766,6 +830,52 @@ app.get('/', (req, res) => {
 </body>
 </html>
     `);
+});
+
+/**
+ * @swagger
+ * /api/update-status:
+ *   get:
+ *     summary: Check if game files need an update (Steam UpToDateCheck)
+ *     description: Uses Steam UpToDateCheck API to determine if a force update is needed
+ *     responses:
+ *       200:
+ *         description: Update status from Steam
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 needUpdate:
+ *                   type: boolean
+ *                 upToDate:
+ *                   type: boolean
+ *                 currentVersion:
+ *                   type: integer
+ *                   nullable: true
+ *                 requiredVersion:
+ *                   type: integer
+ *                   nullable: true
+ *                 message:
+ *                   type: string
+ *                   nullable: true
+ */
+app.get('/api/update-status', async (req, res) => {
+    try {
+        if (!global.steamManager || typeof global.steamManager.checkSteamUpToDate !== 'function') {
+            return res.status(503).json({
+                error: 'Steam manager or UpToDateCheck not available',
+                needUpdate: true
+            });
+        }
+        const result = await global.steamManager.checkSteamUpToDate();
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message,
+            needUpdate: true
+        });
+    }
 });
 
 /**
@@ -802,31 +912,64 @@ app.get('/', (req, res) => {
  *                   type: string
  *                   example: "Update process failed"
  */
-app.post('/api/force-update', (req, res) => {
+app.post('/api/force-update', async (req, res) => {
     try {
         // Check if we can access the SteamCMD manager
-        if (global.steamManager && typeof global.steamManager.forceExtraction === 'function') {
-            // Start the force extraction process in the background
-            global.steamManager.forceExtraction().catch(error => {
-                console.error('Force extraction failed:', error.message);
-            });
-            
-            res.json({
-                success: true,
-                message: 'Force extraction started. Check server logs for progress.'
-            });
-        } else {
-            res.status(500).json({
+        if (!global.steamManager || typeof global.steamManager.forceExtraction !== 'function') {
+            return res.status(500).json({
                 success: false,
                 error: 'Steam manager not available'
             });
         }
+        // Use Steam UpToDateCheck API to see if we actually need a force update
+        if (typeof global.steamManager.checkSteamUpToDate === 'function') {
+            const upToDateResult = await global.steamManager.checkSteamUpToDate();
+            if (!upToDateResult.needUpdate) {
+                return res.json({
+                    success: true,
+                    skipped: true,
+                    message: 'Server is already up to date. No force update needed.',
+                    upToDate: true,
+                    currentVersion: upToDateResult.currentVersion
+                });
+            }
+        }
+        // Start the force extraction process in the background
+        global.steamManager.forceExtraction().catch(error => {
+            console.error('Force extraction failed:', error.message);
+        });
+        res.json({
+            success: true,
+            message: 'Force extraction started. Check server logs for progress.'
+        });
     } catch (error) {
         res.status(500).json({
             success: false,
             error: error.message
         });
     }
+});
+
+// Server-Sent Events stream for live log updates
+app.get('/api/logs/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // nginx
+    res.flushHeaders();
+    logStreamClients.add(res);
+    const keepAlive = setInterval(() => {
+        try {
+            res.write(': keepalive\n\n');
+        } catch (err) {
+            clearInterval(keepAlive);
+            logStreamClients.delete(res);
+        }
+    }, 30000);
+    req.on('close', () => {
+        clearInterval(keepAlive);
+        logStreamClients.delete(res);
+    });
 });
 
 /**
@@ -877,11 +1020,7 @@ app.get('/api/logs', (req, res) => {
         const recentLogs = serverLogs.slice(-lines);
         
         // Format logs for display
-        const formattedLogs = recentLogs.map(log => {
-            const time = new Date(log.timestamp).toLocaleTimeString();
-            const level = log.level.toUpperCase().padEnd(5);
-            return `[${time}] ${level} ${log.message}`;
-        });
+        const formattedLogs = recentLogs.map(log => formatLogLine(log));
         
         res.json({
             logs: formattedLogs,
