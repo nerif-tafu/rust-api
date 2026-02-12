@@ -1,0 +1,14 @@
+node_modules
+.env
+.env.*
+!.env.example
+game-data
+steam-cmd
+asset-ripper
+export-data
+processed-data
+logs
+.git
+.github
+*.md
+.DS_Store

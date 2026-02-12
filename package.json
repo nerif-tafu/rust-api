@@ -4,7 +4,10 @@
   "description": "Extract item information from Rust game files using AssetRipper API",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "docker:build": "docker build -t rust-api:local .",
+    "docker:run": "docker run --rm -p 3100:3100 --env-file .env rust-api:local",
+    "docker:test": "npm run docker:build && npm run docker:run"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -17,12 +20,7 @@
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },
-  "keywords": [
-    "asset-ripper",
-    "rust",
-    "game",
-    "extraction"
-  ],
+  "keywords": ["asset-ripper", "rust", "game", "extraction"],
   "author": "",
   "license": "MIT"
 }
