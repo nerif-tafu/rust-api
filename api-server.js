@@ -2,7 +2,6 @@ const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
@@ -10,8 +9,7 @@ const archiver = require('archiver');
 const app = express();
 const PORT = process.env.PORT || 3100;
 
-// Trust proxy headers (for rate limiting and IP detection behind reverse proxies)
-// Set to 1 to trust the first proxy in the chain (e.g., Cloudflare, nginx)
+// Trust proxy headers for correct client IP behind reverse proxies (e.g., Cloudflare, nginx)
 app.set('trust proxy', 1);
 
 // Server readiness status
@@ -125,52 +123,6 @@ updateStatus(1, 'Basic setup complete - Express server initialized');
 app.use(cors());
 app.use(express.json());
 
-// Rate limiting configuration
-const generalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10000, // Limit each IP to 10,000 requests per windowMs
-    message: {
-        error: 'Too many requests from this IP, please try again later.',
-        retryAfter: '15 minutes'
-    },
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-    handler: (req, res) => {
-        res.status(429).json({
-            error: 'Too many requests from this IP, please try again later.',
-            retryAfter: '15 minutes',
-            limit: req.rateLimit.limit,
-            remaining: req.rateLimit.remaining,
-            resetTime: new Date(req.rateLimit.resetTime).toISOString()
-        });
-    }
-});
-
-const strictLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 3000, // Limit each IP to 3,000 requests per windowMs
-    message: {
-        error: 'Too many requests from this IP, please try again later.',
-        retryAfter: '15 minutes'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res) => {
-        res.status(429).json({
-            error: 'Too many requests from this IP, please try again later.',
-            retryAfter: '15 minutes',
-            limit: req.rateLimit.limit,
-            remaining: req.rateLimit.remaining,
-            resetTime: new Date(req.rateLimit.resetTime).toISOString()
-        });
-    }
-});
-
-
-
-// Apply general rate limiting to all routes
-app.use(generalLimiter);
-
 // Security headers middleware
 app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -256,7 +208,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.2.0',
+            version: '1.3.0',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
@@ -599,9 +551,6 @@ app.get('/', (req, res) => {
         .endpoint-method { display: inline-block; background: #667eea; color: white; padding: 4px 8px; border-radius: 5px; font-size: 0.8rem; font-weight: bold; margin-right: 10px; }
         .endpoint-path { font-family: 'Courier New', monospace; font-weight: bold; color: #333; }
         .endpoint-description { margin-top: 8px; color: #666; font-size: 0.9rem; }
-        .rate-limits { background: #fff3cd; border-left-color: #ffc107; margin-top: 20px; }
-        .rate-limits h3 { color: #856404; }
-        .rate-limit-item { margin: 10px 0; padding: 10px; background: white; border-radius: 8px; border-left: 3px solid #ffc107; }
         .action-buttons { display: flex; gap: 15px; margin-top: 30px; flex-wrap: wrap; }
         .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: all 0.3s ease; }
         .btn-primary { background: #667eea; color: white; }
@@ -647,7 +596,7 @@ app.get('/', (req, res) => {
             <div class="version-info">
                 <div class="version-item">
                     <h3>API Version</h3>
-                    <p>1.2.0</p>
+                    <p>1.3.0</p>
                 </div>
                 <div class="version-item game-version">
                     <h3>Game Version</h3>
@@ -1145,25 +1094,8 @@ app.get('/api/logs', (req, res) => {
  *                   type: integer
  *                 offset:
  *                   type: integer
- *       429:
- *         description: Too many requests
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                 retryAfter:
- *                   type: string
- *                 limit:
- *                   type: number
- *                 remaining:
- *                   type: number
- *                 resetTime:
- *                   type: string
  */
-app.get('/api/items', strictLimiter, (req, res) => {
+app.get('/api/items', (req, res) => {
     try {
         let filteredItems = [...itemsData];
         const { limit = 50, offset = 0, category, hasCrafting } = req.query;
@@ -1412,54 +1344,6 @@ app.get('/api/version', (req, res) => {
     }
 });
 
-/**
- * @swagger
- * /api/rate-limit-status:
- *   get:
- *     summary: Get rate limit status
- *     description: Get current rate limit status for the requesting IP
- *     responses:
- *       200:
- *         description: Rate limit status
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 limit:
- *                   type: number
- *                   description: Maximum requests allowed
- *                 remaining:
- *                   type: number
- *                   description: Remaining requests
- *                 resetTime:
- *                   type: string
- *                   description: When the rate limit resets
- *                 windowMs:
- *                   type: number
- *                   description: Window size in milliseconds
- */
-app.get('/api/rate-limit-status', (req, res) => {
-    if (req.rateLimit) {
-        res.json({
-            limit: req.rateLimit.limit,
-            remaining: req.rateLimit.remaining,
-            resetTime: new Date(req.rateLimit.resetTime).toISOString(),
-            windowMs: req.rateLimit.windowMs
-        });
-    } else {
-        res.json({
-            message: 'Rate limit information not available',
-            limit: 100,
-            remaining: 'unknown',
-            resetTime: 'unknown',
-            windowMs: 15 * 60 * 1000
-        });
-    }
-});
-
-
-
 
 
 /**
@@ -1488,25 +1372,8 @@ app.get('/api/rate-limit-status', (req, res) => {
  *           application/json:
  *             schema:
  *               type: object
- *       429:
- *         description: Too many requests
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                 retryAfter:
- *                   type: string
- *                 limit:
- *                   type: number
- *                 remaining:
- *                   type: number
- *                 resetTime:
- *                   type: string
  */
-app.get('/api/crafting', strictLimiter, (req, res) => {
+app.get('/api/crafting', (req, res) => {
     try {
         const { limit = 50, offset = 0 } = req.query;
         const craftingItems = itemsData.filter(item => 
