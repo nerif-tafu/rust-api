@@ -71,25 +71,6 @@ function endpointCard(path, method, op) {
   const responses = responseTable(op.responses);
   if (responses) { bodyChildren.push(el('h4', { text: 'Responses' }), responses); }
 
-  // Lightweight try-it-out for parameterless GETs
-  if (m === 'get' && !/[{]/.test(path)) {
-    const out = el('pre', { className: 'logs-container', attrs: { style: 'display:none;min-height:0;max-height:280px' } });
-    const btn = el('button', { className: 'btn btn-sm endpoint-try', text: 'Send request' });
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      out.style.display = 'block';
-      out.textContent = 'Loading…';
-      try {
-        const r = await fetch(path);
-        const t = await r.text();
-        let pretty = t;
-        try { pretty = JSON.stringify(JSON.parse(t), null, 2); } catch {}
-        out.textContent = `${r.status} ${r.statusText}\n\n${pretty}`;
-      } catch (err) { out.textContent = 'Request failed: ' + err.message; }
-    });
-    bodyChildren.push(el('h4', { text: 'Try it' }), btn, out);
-  }
-
   const card = el('div', {
     className: `endpoint m-${m}`,
     attrs: { 'data-search': `${method} ${path} ${desc}`.toLowerCase() },

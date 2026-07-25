@@ -111,7 +111,6 @@ a:hover { text-decoration: underline; }
 .endpoint-body h4 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--text-muted); margin: 16px 0 8px; }
 .endpoint-body p.summary { margin: 12px 0 0; }
-.endpoint-try { margin-top: 12px; }
 
 /* Param / response tables */
 .ref-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
