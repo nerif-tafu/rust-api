@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "serve": "node api-server.js",
     "docker:build": "docker build -t rust-api:local .",
     "docker:run": "docker run --rm -p 3100:3100 --env-file .env rust-api:local",
     "docker:test": "npm run docker:build && npm run docker:run"

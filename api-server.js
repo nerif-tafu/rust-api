@@ -1,5 +1,4 @@
 const express = require('express');
-const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const cors = require('cors');
 const fs = require('fs');
@@ -122,6 +121,9 @@ updateStatus(1, 'Basic setup complete - Express server initialized');
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Static assets for the single-page docs (app.css, app.js)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Security headers middleware
 app.use((req, res, next) => {
@@ -507,273 +509,93 @@ async function buildZipArchive() {
  *                     type: string
  */
 app.get('/', (req, res) => {
-    // Get game version information
+    const escapeHtml = (v) => String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
     let gameVersion = null;
     try {
-        const gameDataPath = path.join(process.cwd(), 'game-data');
-        const versionFilePath = path.join(gameDataPath, 'version.txt');
-        
-        if (fs.existsSync(versionFilePath)) {
-            gameVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
-        }
+        const versionFilePath = path.join(process.cwd(), 'game-data', 'version.txt');
+        if (fs.existsSync(versionFilePath)) gameVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
     } catch (error) {
         console.warn('Could not read game version:', error.message);
     }
 
-    res.send(`
-<!DOCTYPE html>
+    const status = serverStatus.status || 1;
+    const ready = status >= 5;
+    const apiVersion = (specs && specs.info && specs.info.version) || '';
+    const lastCheck = serverStatus.lastUpdateCheck
+        ? new Date(serverStatus.lastUpdateCheck).toLocaleString() : 'Never';
+    const message = serverStatus.message || '';
+
+    res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rust Items API</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; margin-bottom: 40px; color: white; }
-        .header h1 { font-size: 3rem; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
-        .header p { font-size: 1.2rem; opacity: 0.9; }
-        .status-card { background: white; border-radius: 15px; padding: 30px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-        .status-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
-        .status-badge { padding: 8px 16px; border-radius: 25px; font-weight: bold; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
-        .status-ready { background: #4CAF50; color: white; }
-        .status-starting { background: #FF9800; color: white; }
-        .version-info { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
-        .version-item { background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 4px solid #667eea; flex: 1; min-width: 200px; }
-        .version-item h3 { color: #667eea; margin-bottom: 5px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
-        .version-item p { font-size: 1.1rem; font-weight: 600; }
-        .game-version { background: #e8f5e8; border-left-color: #4CAF50; }
-        .game-version h3 { color: #4CAF50; }
-        .endpoints-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin-top: 20px; }
-        .endpoint-item { background: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 4px solid #667eea; transition: transform 0.2s ease; }
-        .endpoint-item:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .endpoint-method { display: inline-block; background: #667eea; color: white; padding: 4px 8px; border-radius: 5px; font-size: 0.8rem; font-weight: bold; margin-right: 10px; }
-        .endpoint-path { font-family: 'Courier New', monospace; font-weight: bold; color: #333; }
-        .endpoint-description { margin-top: 8px; color: #666; font-size: 0.9rem; }
-        .action-buttons { display: flex; gap: 15px; margin-top: 30px; flex-wrap: wrap; }
-        .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: all 0.3s ease; }
-        .btn-primary { background: #667eea; color: white; }
-        .btn-primary:hover { background: #5a6fd8; transform: translateY(-2px); }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn-secondary:hover { background: #5a6268; transform: translateY(-2px); }
-        .btn-warning { background: #ffc107; color: #212529; }
-        .btn-warning:hover { background: #e0a800; transform: translateY(-2px); }
-        .footer { text-align: center; margin-top: 40px; color: white; opacity: 0.8; }
-        
-        /* Modal Styles */
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
-        .modal-content { background-color: white; margin: 5% auto; padding: 0; border-radius: 15px; width: 90%; max-width: 1000px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        .modal-header { padding: 20px 30px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; border-radius: 15px 15px 0 0; }
-        .modal-header h2 { margin: 0; color: #333; }
-        .close { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; transition: color 0.3s; }
-        .close:hover { color: #000; }
-        .modal-body { padding: 20px 30px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .logs-controls { display: flex; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
-        .logs-info { color: #666; font-size: 0.9rem; margin-left: auto; }
-        .logs-container { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 10px; font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.4; overflow-y: auto; flex: 1; min-height: 300px; }
-        .log-line { margin-bottom: 5px; word-wrap: break-word; }
-        .log-line:last-child { margin-bottom: 0; }
-        .loading { text-align: center; color: #666; font-style: italic; }
-        @media (max-width: 768px) { .header h1 { font-size: 2rem; } .status-header { flex-direction: column; align-items: flex-start; } .version-info { flex-direction: column; } .endpoints-grid { grid-template-columns: 1fr; } .modal-content { margin: 2% auto; width: 95%; } .modal-header, .modal-body { padding: 15px 20px; } .logs-controls { flex-direction: column; align-items: flex-start; } .logs-info { margin-left: 0; margin-top: 10px; } }
-    </style>
+    <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Rust Items API</h1>
-            <p>Comprehensive API for Rust game items, crafting recipes, and item images</p>
-        </div>
-        
-        <div class="status-card">
-            <div class="status-header">
-                <h2>Server Status</h2>
-                <span class="status-badge ${serverStatus.status >= 5 ? 'status-ready' : 'status-starting'}">
-                    ${serverStatus.status >= 5 ? 'Ready' : 'Starting Up'}
-                </span>
-            </div>
-            
-            <div class="version-info">
-                <div class="version-item">
-                    <h3>API Version</h3>
-                    <p>1.3.0</p>
+    <main class="page">
+        <header class="page-header">
+            <h1 class="page-title">Rust Items API</h1>
+            <p class="page-description">Item data, crafting recipes and images extracted from Rust game files.</p>
+        </header>
+
+        <section class="section">
+            <div class="section-head">
+                <div>
+                    <h2 class="section-title">Status</h2>
+                    <p class="section-description">${escapeHtml(message)}</p>
                 </div>
-                <div class="version-item game-version">
-                    <h3>Game Version</h3>
-                    <p>${gameVersion ? `Build ${gameVersion}` : 'Not Available'}</p>
-                </div>
-                <div class="version-item">
-                    <h3>Server Status</h3>
-                    <p>${serverStatus.status}/5</p>
-                </div>
-                <div class="version-item">
-                    <h3>Last Update Check</h3>
-                    <p>${serverStatus.lastUpdateCheck.toLocaleString()}</p>
+                <div class="section-actions">
+                    <button class="btn btn-sm" id="openLogsBtn">View logs</button>
+                    <button class="btn btn-sm" id="forceUpdateBtn">Force update</button>
                 </div>
             </div>
-            
-            <p><strong>Status Message:</strong> ${serverStatus.message}</p>
-            
-            <div class="action-buttons">
-                <a href="/api-docs" class="btn btn-primary">📚 API Documentation</a>
-                <button onclick="openLogsModal()" class="btn btn-secondary">📋 View Logs</button>
-                <button onclick="forceUpdate()" class="btn btn-warning">🔄 Force Update</button>
+            <dl class="detail-grid">
+                <div><dt>Server</dt><dd><span class="status-pill ${ready ? 'is-ok' : 'is-warn'}">${ready ? 'Ready' : 'Starting'}</span> ${status}/5</dd></div>
+                <div><dt>API version</dt><dd>${escapeHtml(apiVersion)}</dd></div>
+                <div><dt>Game version</dt><dd>${gameVersion ? 'Build ' + escapeHtml(gameVersion) : 'Not available'}</dd></div>
+                <div><dt>Last update check</dt><dd>${escapeHtml(lastCheck)}</dd></div>
+            </dl>
+        </section>
+
+        <section class="section">
+            <div class="section-head">
+                <div>
+                    <h2 class="section-title">API Reference</h2>
+                    <p class="section-description">Every endpoint, generated from the OpenAPI spec. <a href="/api-docs/swagger.json">Raw spec</a>.</p>
+                </div>
+                <div class="section-actions"><span class="section-description" id="endpointCount"></span></div>
             </div>
-        </div>
-        
-    </div>
-    
-    <!-- Logs Modal -->
-    <div id="logsModal" class="modal">
+            <div class="ref-controls">
+                <input type="text" id="refFilter" class="ref-filter" placeholder="Filter endpoints by path, method or description...">
+            </div>
+            <div id="apiReference"></div>
+        </section>
+    </main>
+
+    <div class="modal" id="logsModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Server Console Logs</h2>
-                <span class="close" onclick="closeLogsModal()">&times;</span>
+                <h2>Server Logs</h2>
+                <span class="modal-close" id="closeLogsBtn" title="Close">&times;</span>
             </div>
             <div class="modal-body">
                 <div class="logs-controls">
-                    <button onclick="refreshLogs()" class="btn btn-primary">🔄 Refresh</button>
-                    <button onclick="clearLogs()" class="btn btn-secondary">🗑️ Clear</button>
+                    <button class="btn btn-sm" id="refreshLogsBtn">Refresh</button>
                     <span class="logs-info">Showing last <span id="logCount">100</span> lines</span>
                 </div>
-                <div id="logsContainer" class="logs-container">
-                    <div class="loading">Loading logs...</div>
-                </div>
+                <div class="logs-container" id="logsContainer"><div class="muted-note">Loading logs...</div></div>
             </div>
         </div>
     </div>
-    
-    <script>
-        function forceUpdate() {
-            if (confirm('This will force a game update and re-extraction. This may take several minutes. Continue?')) {
-                fetch('/api/force-update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('Force update started! Check the server logs for progress.');
-                        setTimeout(() => location.reload(), 2000);
-                    } else {
-                        alert('Update failed: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    alert('Error starting update: ' + error.message);
-                });
-            }
-        }
-        
-        let logsEventSource = null;
-        
-        function openLogsModal() {
-            document.getElementById('logsModal').style.display = 'block';
-            loadLogs();
-            startLogsStream();
-        }
-        
-        function closeLogsModal() {
-            stopLogsStream();
-            document.getElementById('logsModal').style.display = 'none';
-        }
-        
-        function startLogsStream() {
-            stopLogsStream();
-            logsEventSource = new EventSource('/api/logs/stream');
-            logsEventSource.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.log) {
-                        appendLogLine(data.log);
-                    }
-                } catch (e) {}
-            };
-            logsEventSource.onerror = function() {
-                logsEventSource.close();
-                logsEventSource = null;
-            };
-        }
-        
-        function stopLogsStream() {
-            if (logsEventSource) {
-                logsEventSource.close();
-                logsEventSource = null;
-            }
-        }
-        
-        function appendLogLine(formattedLog) {
-            const container = document.getElementById('logsContainer');
-            if (!container || container.querySelector('.loading')) return;
-            const logLine = document.createElement('div');
-            logLine.className = 'log-line';
-            logLine.textContent = formattedLog;
-            container.appendChild(logLine);
-            container.scrollTop = container.scrollHeight;
-            const countEl = document.getElementById('logCount');
-            if (countEl) countEl.textContent = parseInt(countEl.textContent || '0', 10) + 1;
-        }
-        
-        function loadLogs() {
-            const container = document.getElementById('logsContainer');
-            container.innerHTML = '<div class="loading">Loading logs...</div>';
-            
-            fetch('/api/logs?lines=100')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.logs) {
-                        displayLogs(data.logs);
-                        document.getElementById('logCount').textContent = data.totalLines;
-                    } else {
-                        container.innerHTML = '<div class="loading">No logs available</div>';
-                    }
-                })
-                .catch(error => {
-                    container.innerHTML = '<div class="loading">Error loading logs: ' + error.message + '</div>';
-                });
-        }
-        
-        function displayLogs(logs) {
-            const container = document.getElementById('logsContainer');
-            container.innerHTML = '';
-            
-            logs.forEach(log => {
-                const logLine = document.createElement('div');
-                logLine.className = 'log-line';
-                logLine.textContent = log;
-                container.appendChild(logLine);
-            });
-            
-            document.getElementById('logCount').textContent = logs.length;
-            container.scrollTop = container.scrollHeight;
-        }
-        
-        function refreshLogs() {
-            loadLogs();
-        }
-        
-        function clearLogs() {
-            document.getElementById('logsContainer').innerHTML = '<div class="loading">Logs cleared</div>';
-        }
-        
-        // Close modal when clicking outside of it
-        window.onclick = function(event) {
-            const modal = document.getElementById('logsModal');
-            if (event.target === modal) {
-                closeLogsModal();
-            }
-        }
-        
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeLogsModal();
-            }
-        });
-    </script>
+
+    <script src="/app.js"></script>
 </body>
-</html>
-    `);
+</html>`);
 });
 
 /**
@@ -1506,27 +1328,16 @@ app.get('/api/images/cache-status', (req, res) => {
 
 
 
-// Serve Swagger JSON
+// Serve the OpenAPI spec (machine-readable). The human docs live on the
+// unified home page, which renders this spec in the house style.
 app.get('/api-docs/swagger.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.send(specs);
 });
 
-// Serve Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
-    swaggerOptions: {
-        url: '/api-docs/swagger.json',
-        validatorUrl: null,
-        displayRequestDuration: true,
-        docExpansion: 'none',
-        filter: true,
-        showRequestHeaders: true,
-        showCommonExtensions: true,
-        tryItOutEnabled: true
-    },
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'Rust Items API Documentation'
-}));
+// The Swagger UI page was replaced by the unified home page; keep the old
+// path working by redirecting to it.
+app.get('/api-docs', (req, res) => res.redirect('/'));
 
 // Serve item images (after API routes to avoid conflicts)
 app.use('/game-data/Bundles/items', express.static('game-data/Bundles/items'));
