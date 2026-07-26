@@ -24,6 +24,7 @@ RUN npm ci --omit=dev
 
 # Copy application code
 COPY *.js ./
+COPY public ./public
 
 # Create directories used at runtime (game-data, steam-cmd, etc. can be mounted or populated at run)
 RUN mkdir -p game-data processed-data export-data logs
