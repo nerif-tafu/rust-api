@@ -5,7 +5,7 @@ const { spawn, execSync } = require('child_process');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 require('dotenv').config();
-const { GAME_DATA_DIR } = require('./game-data-path');
+const { GAME_DATA_DIR, PROCESSED_DATA_DIR, EXPORT_DATA_DIR } = require('./game-data-path');
 
 const pipelineAsync = promisify(pipeline);
 
@@ -399,7 +399,7 @@ quit`;
         console.log('Checking if Rust game version has changed...');
         
         // Check if rust_items.json is empty or missing - if so, we need to download and extract
-        const rustItemsPath = path.join(process.cwd(), 'processed-data', 'rust_items.json');
+        const rustItemsPath = path.join(PROCESSED_DATA_DIR, 'rust_items.json');
         if (!fs.existsSync(rustItemsPath)) {
             console.log('📝 rust_items.json not found - need to download and extract Rust data');
             return true; // Update needed
@@ -421,7 +421,7 @@ quit`;
         }
         
         // Check if we recently failed an extraction to prevent infinite loops
-        const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+        const extractionFailurePath = path.join(PROCESSED_DATA_DIR, '.extraction_failed');
         if (fs.existsSync(extractionFailurePath)) {
             const failureTime = fs.statSync(extractionFailurePath).mtime.getTime();
             const timeSinceFailure = Date.now() - failureTime;
@@ -907,7 +907,7 @@ quit`;
                     await manager.extractRustItems();
                     
                     // Verify extraction was successful
-                    const rustItemsPath = path.join(process.cwd(), 'processed-data', 'rust_items.json');
+                    const rustItemsPath = path.join(PROCESSED_DATA_DIR, 'rust_items.json');
                     if (fs.existsSync(rustItemsPath)) {
                         const itemsData = JSON.parse(fs.readFileSync(rustItemsPath, 'utf8'));
                         if (itemsData && Array.isArray(itemsData) && itemsData.length > 0) {
@@ -924,7 +924,7 @@ quit`;
                             }
                             
                             // Remove any failure marker if it exists
-                            const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+                            const extractionFailurePath = path.join(PROCESSED_DATA_DIR, '.extraction_failed');
                             if (fs.existsSync(extractionFailurePath)) {
                                 try {
                                     fs.unlinkSync(extractionFailurePath);
@@ -1023,12 +1023,12 @@ quit`;
             );
             
             await this.safeDeleteDirectory(
-                path.resolve(process.cwd(), 'export-data'), 
+                EXPORT_DATA_DIR, 
                 'existing export data'
             );
             
             await this.safeDeleteDirectory(
-                path.resolve(process.cwd(), 'processed-data'), 
+                PROCESSED_DATA_DIR, 
                 'existing processed data'
             );
             
@@ -1066,7 +1066,7 @@ quit`;
                 await manager.extractRustItems();
                 
                 // Verify extraction was successful
-                const rustItemsPath = path.join(process.cwd(), 'processed-data', 'rust_items.json');
+                const rustItemsPath = path.join(PROCESSED_DATA_DIR, 'rust_items.json');
                 if (fs.existsSync(rustItemsPath)) {
                     const itemsData = JSON.parse(fs.readFileSync(rustItemsPath, 'utf8'));
                     if (itemsData && Array.isArray(itemsData) && itemsData.length > 0) {
@@ -1079,7 +1079,7 @@ quit`;
                         }
                         
                         // Remove any failure marker if it exists
-                        const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+                        const extractionFailurePath = path.join(PROCESSED_DATA_DIR, '.extraction_failed');
                         if (fs.existsSync(extractionFailurePath)) {
                             try {
                                 fs.unlinkSync(extractionFailurePath);
@@ -1147,7 +1147,7 @@ quit`;
     }
 
     markExtractionFailure() {
-        const extractionFailurePath = path.join(process.cwd(), 'processed-data', '.extraction_failed');
+        const extractionFailurePath = path.join(PROCESSED_DATA_DIR, '.extraction_failed');
         try {
             fs.writeFileSync(extractionFailurePath, Date.now().toString());
             console.log('✅ Marked extraction failure. System will wait before retrying.');

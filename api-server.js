@@ -4,7 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
-const { GAME_DATA_DIR, gameDataPath: resolveGameDataPath } = require('./game-data-path');
+const { GAME_DATA_DIR, gameDataPath: resolveGameDataPath, PROCESSED_DATA_DIR } = require('./game-data-path');
 
 const app = express();
 const PORT = process.env.PORT || 3100;
@@ -278,7 +278,7 @@ let itemsData = [];
 
 function loadItemsData() {
     try {
-        const itemsPath = path.join(__dirname, 'processed-data', 'rust_items.json');
+        const itemsPath = path.join(PROCESSED_DATA_DIR, 'rust_items.json');
         
         if (fs.existsSync(itemsPath)) {
             itemsData = JSON.parse(fs.readFileSync(itemsPath, 'utf8'));
@@ -297,7 +297,7 @@ function loadItemsData() {
 loadItemsData();
 
 // Watch for changes to rust_items.json and reload automatically
-const itemsDataPath = path.join(__dirname, 'processed-data', 'rust_items.json');
+const itemsDataPath = path.join(PROCESSED_DATA_DIR, 'rust_items.json');
 let fileWatcher = null;
 
 function setupFileWatcher() {
@@ -437,7 +437,7 @@ async function buildZipArchive() {
     console.log(`📦 Building ZIP archive with ${imageFiles.length} images...`);
 
     // Create cache directory if it doesn't exist
-    const cacheDir = path.join(__dirname, 'processed-data', 'cache');
+    const cacheDir = path.join(PROCESSED_DATA_DIR, 'cache');
     if (!fs.existsSync(cacheDir)) {
         fs.mkdirSync(cacheDir, { recursive: true });
     }

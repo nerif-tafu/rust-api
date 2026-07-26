@@ -7,7 +7,7 @@ const https = require('https');
 const { execSync } = require('child_process');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
-const { GAME_DATA_DIR } = require('./game-data-path');
+const { GAME_DATA_DIR, PROCESSED_DATA_DIR, EXPORT_DATA_DIR, ASSET_RIPPER_DIR } = require('./game-data-path');
 
 const pipelineAsync = promisify(pipeline);
 
@@ -30,15 +30,15 @@ class AssetRipperManager {
         };
         
         this.directories = {
-            assetRipper: 'asset-ripper',
-            exportData: 'export-data',
-            processedData: 'processed-data',
+            assetRipper: ASSET_RIPPER_DIR,
+            exportData: EXPORT_DATA_DIR,
+            processedData: PROCESSED_DATA_DIR,
             gameData: GAME_DATA_DIR
         };
         
         // Additional subdirectories that need to be created
         this.subDirectories = {
-            logs: 'asset-ripper/logs'
+            logs: path.join(ASSET_RIPPER_DIR, 'logs')
         };
         
         // Rust item category mapping
@@ -251,7 +251,7 @@ class AssetRipperManager {
     async checkAssetRipperSetup() {
         const os = this.getOS();
         const executableName = os === 'win32' ? 'AssetRipper.GUI.Free.exe' : 'AssetRipper.GUI.Free';
-        const assetRipperPath = path.join(process.cwd(), 'asset-ripper', executableName);
+        const assetRipperPath = path.join(ASSET_RIPPER_DIR, executableName);
         
         if (!fs.existsSync(assetRipperPath)) {
             console.log('\n🔧 AssetRipper not found. Setting up automatically...');
@@ -315,7 +315,7 @@ class AssetRipperManager {
         const assetRipperPath = await this.checkAssetRipperSetup();
         
         // Create logs directory
-        const logsDir = path.join(process.cwd(), 'asset-ripper', 'logs');
+        const logsDir = path.join(ASSET_RIPPER_DIR, 'logs');
         if (!fs.existsSync(logsDir)) {
             fs.mkdirSync(logsDir, { recursive: true });
         }
@@ -406,7 +406,7 @@ class AssetRipperManager {
     async exportProject() {
         console.log('Exporting Unity project...');
         
-        const exportPath = path.join(process.cwd(), 'export-data');
+        const exportPath = EXPORT_DATA_DIR;
         
         // Create export directory if it doesn't exist
         if (!fs.existsSync(exportPath)) {
@@ -787,7 +787,7 @@ class AssetRipperManager {
 
     saveToFile(items, filename = 'rust_items.json') {
         // Ensure processed-data directory exists
-        const processedDataDir = path.join(process.cwd(), 'processed-data');
+        const processedDataDir = PROCESSED_DATA_DIR;
         if (!fs.existsSync(processedDataDir)) {
             fs.mkdirSync(processedDataDir, { recursive: true });
         }
@@ -872,7 +872,7 @@ class AssetRipperManager {
             });
             
             // Show file locations
-            const processedDataDir = path.resolve('processed-data');
+            const processedDataDir = PROCESSED_DATA_DIR;
             console.log('\n=== FILES SAVED ===');
             console.log(`📁 Items data: ${path.join(processedDataDir, 'rust_items.json')}`);
             console.log(`📁 Summary: ${path.join(processedDataDir, 'extraction_summary.json')}`);
