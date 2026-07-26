@@ -210,7 +210,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.3.0',
+            version: '1.4.0',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
