@@ -5,6 +5,7 @@ const { spawn, execSync } = require('child_process');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
 require('dotenv').config();
+const { GAME_DATA_DIR } = require('./game-data-path');
 
 const pipelineAsync = promisify(pipeline);
 
@@ -13,10 +14,10 @@ class SteamCMDManager {
         this.steamAppId = process.env.STEAM_APP_ID || '252490'; // Rust
         this.steamUsername = process.env.STEAM_USERNAME;
         this.steamPassword = process.env.STEAM_PASSWORD;
-        
+
         this.directories = {
             steamCmd: 'steam-cmd',
-            gameData: 'game-data'
+            gameData: GAME_DATA_DIR
         };
         
         // SteamCMD download URLs for different platforms
@@ -380,8 +381,12 @@ class SteamCMDManager {
         // Use 'validate' for normal checks, full 'app_update' for force updates
         const updateCommand = forceUpdate ? `app_update ${this.steamAppId}` : `app_update ${this.steamAppId} validate`;
         
+        // Rust (252490) is the game client, which has no native Linux depot —
+        // only Windows. Without forcing the platform, app_update on a Linux
+        // host fails immediately with "Invalid platform".
         return `@ShutdownOnFailedCommand 1
 @NoPromptForPassword 1
+@sSteamCmdForcePlatformType windows
 force_install_dir "${gameDataDir}"
 login ${this.steamUsername} ${this.steamPassword}
 ${updateCommand}
@@ -500,7 +505,7 @@ quit`;
                         const buildIdMatch = output.match(/"public"\s*{\s*"buildid"\s*"(\d+)"/);
                         if (buildIdMatch) {
                             const currentBuildId = buildIdMatch[1];
-                            const versionFilePath = path.join(process.cwd(), 'game-data', 'version.txt');
+                            const versionFilePath = path.join(GAME_DATA_DIR, 'version.txt');
                             
                             // Check if we have a stored version
                             if (fs.existsSync(versionFilePath)) {
@@ -603,7 +608,7 @@ quit`;
     }
 
     saveGameVersion(buildId) {
-        const versionFilePath = path.join(process.cwd(), 'game-data', 'version.txt');
+        const versionFilePath = path.join(GAME_DATA_DIR, 'version.txt');
         try {
             fs.writeFileSync(versionFilePath, buildId);
             console.log(`💾 Saved game version (build ID): ${buildId}`);
@@ -614,7 +619,7 @@ quit`;
 
     /** Path to the file storing the Steam UpToDateCheck API version (e.g. 1065), not build ID. */
     getSteamApiGameVersionPath() {
-        return path.join(process.cwd(), 'game-data', 'steamapi_game_version.txt');
+        return path.join(GAME_DATA_DIR, 'steamapi_game_version.txt');
     }
 
     /** Create steamapi_game_version.txt with "0" if it doesn't exist (so API is called with version=0 until first update). */
@@ -739,7 +744,7 @@ quit`;
     }
 
     copyBundleToGameData(bundlePath) {
-        const targetPath = path.join(process.cwd(), 'game-data', 'Bundles', 'shared', 'items.preload.bundle');
+        const targetPath = path.join(GAME_DATA_DIR, 'Bundles', 'shared', 'items.preload.bundle');
         
         // Ensure the target directory exists
         const targetDir = path.dirname(targetPath);
@@ -815,7 +820,7 @@ quit`;
         // Validate credentials first
         this.validateCredentials();
         
-        const bundlePath = './game-data/Bundles/shared/items.preload.bundle';
+        const bundlePath = path.join(GAME_DATA_DIR, 'Bundles', 'shared', 'items.preload.bundle');
         
         if (!fs.existsSync(bundlePath)) {
             console.log('📦 Rust bundle file not found. Downloading Rust game files first...');

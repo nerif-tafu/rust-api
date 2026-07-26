@@ -7,6 +7,7 @@ const https = require('https');
 const { execSync } = require('child_process');
 const { pipeline } = require('stream');
 const { promisify } = require('util');
+const { GAME_DATA_DIR } = require('./game-data-path');
 
 const pipelineAsync = promisify(pipeline);
 
@@ -32,7 +33,7 @@ class AssetRipperManager {
             assetRipper: 'asset-ripper',
             exportData: 'export-data',
             processedData: 'processed-data',
-            gameData: 'game-data'
+            gameData: GAME_DATA_DIR
         };
         
         // Additional subdirectories that need to be created
@@ -280,17 +281,17 @@ class AssetRipperManager {
     }
 
     checkBundleFile() {
-        // Look for bundle file in game-data directory
-        let bundlePath = path.resolve('./game-data/Bundles/shared/items.preload.bundle');
-        
+        // Look for bundle file in the configured game-data directory
+        let bundlePath = path.join(GAME_DATA_DIR, 'Bundles', 'shared', 'items.preload.bundle');
+
         if (!fs.existsSync(bundlePath)) {
             console.error('\n❌ Bundle file not found!');
-            console.error('Expected location: game-data/Bundles/shared/items.preload.bundle');
-            console.error('\nPlease place your Rust bundle file (items.preload.bundle) in the game-data/Bundles/shared directory.');
+            console.error(`Expected location: ${bundlePath}`);
+            console.error(`\nPlease place your Rust bundle file (items.preload.bundle) at ${bundlePath}.`);
             console.error('You can find this file in your Rust game installation.\n');
-            throw new Error('Bundle file not found. Please place your items.preload.bundle file in the game-data/Bundles/shared directory.');
+            throw new Error(`Bundle file not found. Please place your items.preload.bundle file at ${bundlePath}.`);
         }
-        
+
         return bundlePath;
     }
 

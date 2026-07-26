@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
+const { GAME_DATA_DIR, gameDataPath: resolveGameDataPath } = require('./game-data-path');
 
 const app = express();
 const PORT = process.env.PORT || 3100;
@@ -210,7 +211,7 @@ const swaggerOptions = {
         openapi: '3.0.0',
         info: {
             title: 'Rust Items API',
-            version: '1.4.0',
+            version: '1.4.1',
             description: 'API for Rust game items, crafting recipes, and item images',
             contact: {
                 name: 'Rust Items Extractor',
@@ -366,7 +367,7 @@ global.reSetupFileWatcher = reSetupFileWatcher;
 
 // Helper function to check if item image exists
 function getItemImageUrl(shortname) {
-    const imagePath = path.join(__dirname, 'game-data', 'Bundles', 'items', `${shortname}.png`);
+    const imagePath = resolveGameDataPath('Bundles', 'items', `${shortname}.png`);
     if (fs.existsSync(imagePath)) {
         return `/game-data/Bundles/items/${shortname}.png`;
     }
@@ -379,7 +380,7 @@ let cachedZipStats = null;
 let cachedZipPromise = null;
 
 function getImagesDirectoryStats() {
-    const imagesDir = path.join(__dirname, 'game-data', 'Bundles', 'items');
+    const imagesDir = resolveGameDataPath('Bundles', 'items');
     if (!fs.existsSync(imagesDir)) return null;
     
     try {
@@ -419,7 +420,7 @@ function shouldRebuildZip() {
 }
 
 async function buildZipArchive() {
-    const imagesDir = path.join(__dirname, 'game-data', 'Bundles', 'items');
+    const imagesDir = resolveGameDataPath('Bundles', 'items');
     
     if (!fs.existsSync(imagesDir)) {
         throw new Error('Images directory not found');
@@ -515,7 +516,7 @@ app.get('/', (req, res) => {
 
     let gameVersion = null;
     try {
-        const versionFilePath = path.join(process.cwd(), 'game-data', 'version.txt');
+        const versionFilePath = resolveGameDataPath('version.txt');
         if (fs.existsSync(versionFilePath)) gameVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
     } catch (error) {
         console.warn('Could not read game version:', error.message);
@@ -1127,11 +1128,10 @@ app.get('/api/items/:shortname/image', (req, res) => {
  */
 app.get('/api/version', (req, res) => {
     try {
-        const gameDataPath = path.join(process.cwd(), 'game-data');
-        const versionFilePath = path.join(gameDataPath, 'version.txt');
-        
+        const versionFilePath = resolveGameDataPath('version.txt');
+
         // Check if game data directory exists
-        const hasGameFiles = fs.existsSync(gameDataPath);
+        const hasGameFiles = fs.existsSync(GAME_DATA_DIR);
         const versionFileExists = fs.existsSync(versionFilePath);
         
         if (!hasGameFiles || !versionFileExists) {
@@ -1139,7 +1139,7 @@ app.get('/api/version', (req, res) => {
                 error: 'No game files or version information found',
                 hasGameFiles: hasGameFiles,
                 versionFileExists: versionFileExists,
-                gameDataPath: gameDataPath
+                gameDataPath: GAME_DATA_DIR
             });
         }
         
@@ -1339,8 +1339,9 @@ app.get('/api-docs/swagger.json', (req, res) => {
 // path working by redirecting to it.
 app.get('/api-docs', (req, res) => res.redirect('/'));
 
-// Serve item images (after API routes to avoid conflicts)
-app.use('/game-data/Bundles/items', express.static('game-data/Bundles/items'));
+// Serve item images (after API routes to avoid conflicts). The URL path is
+// fixed (/game-data/...) regardless of where GAME_DATA_DIR actually points.
+app.use('/game-data/Bundles/items', express.static(resolveGameDataPath('Bundles', 'items')));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
