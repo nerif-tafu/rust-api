@@ -775,7 +775,9 @@ quit`;
             
             // Setup SteamCMD
             await this.setupSteamCmd();
-            
+
+            await this.bootstrapSteamCmd();
+
             console.log('\n=== Setup Complete ===');
             console.log('SteamCMD is ready to use!');
             
@@ -783,6 +785,53 @@ quit`;
             console.error('Setup failed:', error.message);
             throw error;
         }
+    }
+
+    /**
+     * A freshly extracted SteamCMD updates itself the first time it runs, and
+     * any app_update issued during that run fails — which is why the first
+     * download after a pod restart always failed while the next one worked.
+     * steam-cmd lives in the container rather than on the volume, so this
+     * happens on every restart. Getting the self-update out of the way in its
+     * own run makes the first real download behave like every later one.
+     */
+    async bootstrapSteamCmd() {
+        const steamCmdPath = this.getSteamCmdPath();
+        if (!fs.existsSync(steamCmdPath)) {
+            return;
+        }
+
+        console.log('Priming SteamCMD (first run self-updates)...');
+
+        await new Promise((resolve) => {
+            const child = spawn(steamCmdPath, ['+quit'], {
+                cwd: path.dirname(steamCmdPath),
+                stdio: 'pipe'
+            });
+
+            // Whatever this run reports is irrelevant; it exists purely so the
+            // self-update happens before a command we care about.
+            child.stdout.on('data', () => {});
+            child.stderr.on('data', () => {});
+
+            const timer = setTimeout(() => {
+                console.warn('SteamCMD priming timed out, continuing anyway');
+                child.kill();
+                resolve();
+            }, 5 * 60 * 1000);
+
+            child.on('close', (code) => {
+                clearTimeout(timer);
+                console.log(`SteamCMD primed (exit code ${code})`);
+                resolve();
+            });
+
+            child.on('error', (error) => {
+                clearTimeout(timer);
+                console.warn('Could not prime SteamCMD:', error.message);
+                resolve();
+            });
+        });
     }
 
     async downloadRust() {
