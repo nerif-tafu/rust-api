@@ -45,13 +45,12 @@ class SteamCMDManager {
         }
         
         console.log('✅ Steam credentials found and validated');
-        // Deliberately logs no value derived from the username. Everything
-        // written to console.log is captured into the API server's log buffer
-        // and served over HTTP, so the account name has no business here at
-        // all — masking it still leaves a value derived from a credential in a
-        // published stream. The length is enough to tell "wrong account
-        // configured" from "no account configured" when debugging.
-        console.log(`Steam account: configured (${this.steamUsername.length} chars)`);
+        // Nothing derived from the username goes into this line — not the
+        // value, not a mask of it, not its length. Everything written to
+        // console.log is captured into a buffer served over HTTP, and the
+        // preceding guard already proves the credential is present, so there
+        // is nothing left worth reporting about it.
+        console.log('Steam account: configured');
         console.log(`App ID: ${this.steamAppId}`);
         console.log('');
     }
