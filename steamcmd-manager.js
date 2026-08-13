@@ -9,6 +9,18 @@ const { GAME_DATA_DIR, PROCESSED_DATA_DIR, EXPORT_DATA_DIR } = require('./game-d
 
 const pipelineAsync = promisify(pipeline);
 
+/**
+ * Mask an identifier for logging: keep the first and last character so the
+ * value stays recognisable to whoever configured it, replace the rest.
+ * Short values are masked entirely, since "a*b" would give away almost all of
+ * a three-character name.
+ */
+function maskIdentifier(value) {
+    const s = String(value || '');
+    if (s.length <= 4) return '*'.repeat(s.length || 1);
+    return `${s[0]}${'*'.repeat(s.length - 2)}${s[s.length - 1]}`;
+}
+
 class SteamCMDManager {
     constructor() {
         this.steamAppId = process.env.STEAM_APP_ID || '252490'; // Rust
@@ -45,7 +57,11 @@ class SteamCMDManager {
         }
         
         console.log('✅ Steam credentials found and validated');
-        console.log(`Username: ${this.steamUsername}`);
+        // Masked rather than printed in full: everything written to console.log
+        // is captured into the API server's log buffer, which is served over
+        // HTTP. Enough characters survive to confirm which account is in use
+        // when debugging, without publishing the account name itself.
+        console.log(`Username: ${maskIdentifier(this.steamUsername)}`);
         console.log(`App ID: ${this.steamAppId}`);
         console.log('');
     }

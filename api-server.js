@@ -3,6 +3,7 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const archiver = require('archiver');
 const { GAME_DATA_DIR, gameDataPath: resolveGameDataPath, PROCESSED_DATA_DIR } = require('./game-data-path');
 
@@ -134,6 +135,49 @@ app.use((req, res, next) => {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     next();
 });
+
+// Authentication for the log endpoints.
+//
+// console.log is overridden below to capture every line into an in-memory
+// buffer, and SteamCMD's piped stdout flows into it too. That buffer therefore
+// carries operational detail — install paths, account identifiers, Steam's own
+// login output — which should not be readable by anyone who can reach the port.
+//
+// This fails closed on purpose: with no LOGS_API_KEY set the endpoints return
+// 503 rather than silently serving the buffer to everyone, because the failure
+// mode of forgetting to configure it should be a broken debug view, not a
+// quiet disclosure.
+const LOGS_API_KEY = (process.env.LOGS_API_KEY || '').trim();
+
+function requireLogsAuth(req, res, next) {
+    if (!LOGS_API_KEY) {
+        return res.status(503).json({
+            error: 'Log access is not configured. Set LOGS_API_KEY to enable /api/logs.'
+        });
+    }
+
+    const header = req.get('authorization') || '';
+    const supplied = header.startsWith('Bearer ')
+        ? header.slice(7)
+        : String(req.query.key || '');
+
+    // Compare via timingSafeEqual, which requires equal lengths — hash both
+    // sides first so a wrong-length key can't be distinguished by timing.
+    const a = crypto.createHash('sha256').update(supplied).digest();
+    const b = crypto.createHash('sha256').update(LOGS_API_KEY).digest();
+    if (!crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    next();
+}
+
+// Covers /api/logs and /api/logs/stream by prefix. /debug/status is included
+// because it serves logs/app.log and logs/error.log straight off disk — the
+// same disclosure by a different route, so gating only one of them would leave
+// the door open.
+app.use('/api/logs', requireLogsAuth);
+app.use('/debug/status', requireLogsAuth);
 
 // Debug endpoint to check current server status details
 app.get('/debug/status', (req, res) => {
