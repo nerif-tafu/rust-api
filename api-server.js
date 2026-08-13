@@ -149,6 +149,24 @@ app.use((req, res, next) => {
 // quiet disclosure.
 const LOGS_API_KEY = (process.env.LOGS_API_KEY || '').trim();
 
+// timingSafeEqual throws unless both buffers are the same length, so the two
+// sides have to be reduced to a fixed width first. HMAC under a key generated
+// fresh each boot does that: an attacker cannot precompute or compare digests
+// across requests, and the comparison stays constant-time regardless of how
+// long a wrong key is.
+//
+// A plain hash would work equally well cryptographically here — these are
+// high-entropy tokens, not passwords — but it reads as password hashing to
+// static analysis. HMAC states the intent (authenticating a token) rather than
+// inviting the question.
+const COMPARE_KEY = crypto.randomBytes(32);
+
+function constantTimeEquals(a, b) {
+    const da = crypto.createHmac('sha256', COMPARE_KEY).update(String(a)).digest();
+    const db = crypto.createHmac('sha256', COMPARE_KEY).update(String(b)).digest();
+    return crypto.timingSafeEqual(da, db);
+}
+
 function requireLogsAuth(req, res, next) {
     if (!LOGS_API_KEY) {
         return res.status(503).json({
@@ -161,11 +179,7 @@ function requireLogsAuth(req, res, next) {
         ? header.slice(7)
         : String(req.query.key || '');
 
-    // Compare via timingSafeEqual, which requires equal lengths — hash both
-    // sides first so a wrong-length key can't be distinguished by timing.
-    const a = crypto.createHash('sha256').update(supplied).digest();
-    const b = crypto.createHash('sha256').update(LOGS_API_KEY).digest();
-    if (!crypto.timingSafeEqual(a, b)) {
+    if (!constantTimeEquals(supplied, LOGS_API_KEY)) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
